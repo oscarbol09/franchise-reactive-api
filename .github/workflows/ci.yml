@@ -14,16 +14,31 @@ permissions:
   contents: read
 
 jobs:
+  security-audit:
+    name: Secret & Supply-Chain Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository (Full History)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Scan Git History for Leaked Secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   verify:
     name: Build, Unit & Integration Tests (Java 21)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21 (Eclipse Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -33,7 +48,7 @@ jobs:
         run: ./mvnw clean verify -B
 
       - name: Archive Code Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: jacoco-coverage-report
@@ -41,25 +56,36 @@ jobs:
           retention-days: 7
 
   docker-build:
-    name: Docker Container Build Verification
-    needs: [verify]
+    name: Docker Container Build & Trivy Vulnerability Scan
+    needs: [security-audit, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build Application Image (Dry-Run Packaging)
-        uses: docker/build-push-action@v6
+      - name: Build Application Image (Loaded for Vulnerability Audit)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: false
+          load: true
           tags: franchise-api:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan Container Image OS Packages for Critical/High CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: franchise-api:test
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os'
+          severity: 'CRITICAL,HIGH'
 
   iac-validation:
     name: Infrastructure as Code (IaC) Validation
@@ -67,28 +93,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.8.5
 
-      - name: Validate Terraform Syntax & Configuration
+      - name: Validate Terraform Formatting, Syntax & Configuration
         run: |
           cd infra/terraform
+          terraform fmt -check -recursive
           terraform init -backend=false
           terraform validate
 
-      - name: Validate CloudFormation Template Syntax
+      - name: Lint CloudFormation Template with cfn-lint
         run: |
-          python3 -c "
-          import yaml
-          class CfnLoader(yaml.SafeLoader):
-              pass
-          for tag in ['!Ref', '!Sub', '!GetAtt', '!Join', '!Select', '!Split', '!FindInMap', '!Base64', '!Cidr']:
-              CfnLoader.add_constructor(tag, lambda loader, node: node.value)
-          data = yaml.load(open('infra/cloudformation/franchise-stack.yaml'), Loader=CfnLoader)
-          assert 'Resources' in data and len(data['Resources']) > 0
-          print(f'CloudFormation template valid with {len(data[\"Resources\"])} resources.')
-          "
+          pip install --quiet cfn-lint
+          cfn-lint infra/cloudformation/franchise-stack.yaml
