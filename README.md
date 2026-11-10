@@ -103,6 +103,10 @@ El reporte de cobertura se genera en `target/site/jacoco/index.html`.
 
 ## Referencia de Endpoints
 
+Para probar los 10 endpoints de forma interactiva y secuencial:
+* **Colección HTTP lista para ejecutar:** Abrir el archivo `api-requests.http` en la raíz del proyecto (compatible con el cliente HTTP de IntelliJ IDEA y la extensión *REST Client* de VS Code).
+* **Documentación Interactiva Swagger UI:** Acceder a `http://localhost:8080/swagger-ui.html` una vez iniciada la aplicación.
+
 | Requisito | Método | Endpoint | Cuerpo de Petición (JSON) | Respuesta |
 | :--- | :--- | :--- | :--- | :--- |
 | **1. Crear franquicia** | `POST` | `/api/v1/franchises` | `{"name": "Franquicia Norte"}` | `201 Created` |
