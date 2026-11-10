@@ -1,0 +1,40 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: franchise-api
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:h2:mem:///franchise_db?options=DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
+    username: ${SPRING_R2DBC_USERNAME:sa}
+    password: ${SPRING_R2DBC_PASSWORD:}
+    pool:
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+  flyway:
+    enabled: true
+    url: ${SPRING_FLYWAY_URL:jdbc:h2:mem:franchise_db;DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
+    user: ${SPRING_FLYWAY_USER:sa}
+    password: ${SPRING_FLYWAY_PASSWORD:}
+    locations: classpath:db/migration
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

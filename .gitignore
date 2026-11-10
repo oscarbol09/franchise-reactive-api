@@ -1,0 +1,32 @@
+target/
+build/
+.gradle/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IDE & OS ###
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+.DS_Store
+Thumbs.db
+
+### Logs & Temp ###
+*.log
+*.tmp
+*.pdf
+.env
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfplan
+
+### Logs & Temp ###
+.pdf
+
