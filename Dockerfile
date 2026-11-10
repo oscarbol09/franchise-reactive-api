@@ -21,7 +21,10 @@ RUN java -Djarmode=tools -jar target/*.jar extract --layers --launcher --destina
 FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /application
 
-RUN groupadd -r spring && useradd -r -g spring -s /sbin/nologin spring
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r spring && useradd -r -g spring -s /sbin/nologin spring
 
 COPY --from=builder --chown=spring:spring /workspace/extracted/dependencies/ ./
 COPY --from=builder --chown=spring:spring /workspace/extracted/spring-boot-loader/ ./

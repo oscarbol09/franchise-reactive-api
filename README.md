@@ -39,7 +39,7 @@ flowchart LR
 │   ├── terraform/                      # IaC en Terraform (VPC, Subnets privadas, RDS MySQL 8.4, ECR, ECS)
 │   └── cloudformation/                 # Plantilla equivalente en AWS CloudFormation
 └── src/
-    ├── main/java/com/accenture/franchise/
+    ├── main/java/com/franchise/
     │   ├── domain/
     │   │   ├── exception/              # Excepciones de negocio y catálogo ErrorCode
     │   │   ├── model/                  # Records inmutables (Franchise, Branch, Product) y Gateways
@@ -48,7 +48,7 @@ flowchart LR
     │       ├── config/                 # Inyección de casos de uso y configuración OpenAPI
     │       ├── drivenadapter/r2dbc/    # Entidades R2DBC, repositorios reactivos y adaptadores
     │       └── entrypoint/reactiveweb/ # RouterRest, Handler, validación y manejador RFC 9457
-    └── test/java/com/accenture/franchise/
+    └── test/java/com/franchise/
         ├── architecture/               # Reglas ArchUnit (aislamiento estricto del dominio)
         ├── domain/usecase/             # Pruebas unitarias reactivas con StepVerifier y BlockHound
         └── infrastructure/             # Pruebas de integración extremo a extremo con WebTestClient

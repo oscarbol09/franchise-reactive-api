@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.accenture</groupId>
+    <groupId>com.franchise</groupId>
     <artifactId>franchise-api</artifactId>
     <version>1.0.0</version>
     <name>franchise-api</name>

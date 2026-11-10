@@ -93,10 +93,6 @@ resource "aws_db_instance" "mysql" {
   backup_retention_period = 7
   deletion_protection    = var.environment == "prod"
   skip_final_snapshot    = var.environment != "prod"
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }
 
 # ==============================================================================
