@@ -20,6 +20,9 @@ public final class FranchiseApiDtos {
             @Size(max = 120, message = "name must not exceed 120 characters")
             String name
     ) {
+        public NamePayload {
+            name = name != null ? name.trim() : null;
+        }
     }
 
     public record CreateProductPayload(
@@ -30,6 +33,9 @@ public final class FranchiseApiDtos {
             @Min(value = 0, message = "stock must be greater than or equal to 0")
             Integer stock
     ) {
+        public CreateProductPayload {
+            name = name != null ? name.trim() : null;
+        }
     }
 
     public record UpdateStockPayload(

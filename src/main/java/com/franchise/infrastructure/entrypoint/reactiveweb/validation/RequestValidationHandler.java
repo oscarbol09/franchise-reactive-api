@@ -23,7 +23,7 @@ public class RequestValidationHandler {
         return request.bodyToMono(bodyClass)
                 .onErrorMap(ServerWebInputException.class,
                         ex -> new DomainValidationException("Malformed or unreadable JSON request payload"))
-                .switchIfEmpty(Mono.error(new DomainValidationException("Request payload must not be empty")))
+                .switchIfEmpty(Mono.error(() -> new DomainValidationException("Request payload must not be empty")))
                 .flatMap(this::validateBean);
     }
 
@@ -51,6 +51,6 @@ public class RequestValidationHandler {
                 .map(ConstraintViolation::getMessage)
                 .sorted()
                 .collect(Collectors.joining("; "));
-        return Mono.error(new DomainValidationException(message));
+        return Mono.error(() -> new DomainValidationException(message));
     }
 }

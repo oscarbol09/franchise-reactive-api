@@ -1,5 +1,8 @@
 package com.franchise.infrastructure.entrypoint.reactiveweb;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.franchise.config.TestBlockHoundIntegration;
+import com.franchise.domain.exception.DomainValidationException;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.BranchResponse;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.BranchTopProductResponse;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.CreateProductPayload;
@@ -7,6 +10,7 @@ import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.NamePayload;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.ProductResponse;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.UpdateStockPayload;
+import com.franchise.infrastructure.entrypoint.reactiveweb.error.GlobalErrorWebExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -17,10 +21,18 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.RequestPath;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.blockhound.BlockHound;
+import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,13 +46,7 @@ class FranchiseIntegrationTest {
 
     @BeforeAll
     static void setupBlockHound() {
-        BlockHound.install(builder -> builder
-                .allowBlockingCallsInside("org.springframework.util.JdkIdGenerator", "generateId")
-                .allowBlockingCallsInside("java.util.UUID", "randomUUID")
-                .allowBlockingCallsInside(
-                        "org.springframework.core.type.classreading.SimpleMetadataReaderFactory",
-                        "getMetadataReader"
-                ));
+        BlockHound.install(new TestBlockHoundIntegration());
     }
 
     @Test
@@ -255,5 +261,114 @@ class FranchiseIntegrationTest {
                 .expectStatus().isBadRequest()
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(400);
+
+        // 400 Bad Request on zero or negative path variable
+        webTestClient.get()
+                .uri("/api/v1/franchises/0")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.errorCode").isEqualTo("ERR-400");
+
+        // 400 Bad Request on empty request body
+        webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.detail").isEqualTo("Request payload must not be empty");
+
+        // 400 Bad Request on malformed JSON payload
+        webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"name\": ")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.detail").isEqualTo("Malformed or unreadable JSON request payload");
+
+        // 201 Created when name is 120 chars padded with whitespace (trimmed before @Size validation)
+        String padded120 = "  " + "A".repeat(120) + "  ";
+        webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload(padded120))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(FranchiseResponse.class)
+                .value(created -> assertThat(created.name()).hasSize(120));
+
+        // OpenAPI specification includes 400/409 responses and int64 path schemas
+        webTestClient.get()
+                .uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.paths['/api/v1/franchises/{franchiseId}/branches/{branchId}/products'].post.responses['409']").exists()
+                .jsonPath("$.paths['/api/v1/franchises/{franchiseId}'].get.responses['400']").exists();
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("GlobalErrorWebExceptionHandler safely encodes invalid URI characters and maps DataIntegrity, ResponseStatus, and 500 errors")
+    void shouldHandleInvalidUriCharactersAndFallbackExceptionTypes() {
+        GlobalErrorWebExceptionHandler errorHandler = new GlobalErrorWebExceptionHandler(new ObjectMapper());
+
+        // Path with unencoded curly braces '{' and '}' must not throw synchronous IllegalArgumentException
+        MockServerWebExchange baseExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/franchises/invalid").build()
+        );
+        ServerWebExchange braceExchange = baseExchange.mutate()
+                .request(new ServerHttpRequestDecorator(baseExchange.getRequest()) {
+                    @Override
+                    public RequestPath getPath() {
+                        return RequestPath.parse("/api/v1/franchises/{franchiseId}", null);
+                    }
+                })
+                .build();
+        StepVerifier.create(errorHandler.handle(braceExchange,
+                        new DomainValidationException("franchiseId must be a valid numeric identifier")))
+                .verifyComplete();
+        assertThat(baseExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(baseExchange.getResponse().getBodyAsString().block())
+                .contains("%7BfranchiseId%7D")
+                .contains("ERR-400");
+
+        // DataIntegrityViolationException -> 409 Conflict with ERR-409-INTEGRITY
+        MockServerWebExchange integrityExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.post("/api/v1/franchises").build()
+        );
+        StepVerifier.create(errorHandler.handle(integrityExchange,
+                        new DataIntegrityViolationException("Unique constraint violation")))
+                .verifyComplete();
+        assertThat(integrityExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(integrityExchange.getResponse().getBodyAsString().block())
+                .contains("ERR-409-INTEGRITY");
+
+        // ResponseStatusException -> preserves status code and populates errorCode
+        MockServerWebExchange statusExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/unknown").build()
+        );
+        StepVerifier.create(errorHandler.handle(statusExchange,
+                        new ResponseStatusException(HttpStatus.METHOD_NOT_ALLOWED, "Method not supported")))
+                .verifyComplete();
+        assertThat(statusExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(statusExchange.getResponse().getBodyAsString().block())
+                .contains("ERR-405-HTTP");
+
+        // Unexpected RuntimeException -> 500 Internal Server Error
+        MockServerWebExchange fallbackExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/franchises/1").build()
+        );
+        StepVerifier.create(errorHandler.handle(fallbackExchange, new IllegalStateException("Unexpected failure")))
+                .verifyComplete();
+        assertThat(fallbackExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(fallbackExchange.getResponse().getBodyAsString().block())
+                .contains("ERR-500-INTERNAL");
     }
 }

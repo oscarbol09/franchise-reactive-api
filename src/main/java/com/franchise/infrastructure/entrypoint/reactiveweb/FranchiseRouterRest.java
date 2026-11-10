@@ -20,6 +20,7 @@ import org.springdoc.core.annotations.RouterOperations;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -41,7 +42,7 @@ public class FranchiseRouterRest {
     @RouterOperations({
             @RouterOperation(
                     path = BASE_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.POST,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "createFranchise",
@@ -51,66 +52,75 @@ public class FranchiseRouterRest {
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = NamePayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "201", description = "Franchise created", content = @Content(schema = @Schema(implementation = FranchiseResponse.class))),
-                                    @ApiResponse(responseCode = "400", description = "Validation error"),
-                                    @ApiResponse(responseCode = "409", description = "Duplicate franchise name")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate franchise name", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = FRANCHISE_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.GET,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "getFranchiseDetail",
                     operation = @Operation(
                             operationId = "getFranchiseDetail",
                             summary = "Get franchise with all branches and products",
-                            parameters = {@Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true)},
+                            parameters = {
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
+                            },
                             responses = {
                                     @ApiResponse(responseCode = "200", description = "Franchise detail", content = @Content(schema = @Schema(implementation = FranchiseResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Franchise not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = FRANCHISE_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.PATCH,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "updateFranchiseName",
                     operation = @Operation(
                             operationId = "updateFranchiseName",
                             summary = "Update franchise name",
-                            parameters = {@Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true)},
+                            parameters = {
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
+                            },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = NamePayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "200", description = "Franchise updated", content = @Content(schema = @Schema(implementation = FranchiseResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Franchise not found"),
-                                    @ApiResponse(responseCode = "409", description = "Duplicate franchise name")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate franchise name", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = BRANCHES_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.POST,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "addBranch",
                     operation = @Operation(
                             operationId = "addBranch",
                             summary = "Add a new branch to an existing franchise",
-                            parameters = {@Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true)},
+                            parameters = {
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
+                            },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = NamePayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "201", description = "Branch created", content = @Content(schema = @Schema(implementation = BranchResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Franchise not found"),
-                                    @ApiResponse(responseCode = "409", description = "Duplicate branch name in franchise")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate branch name in franchise", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = BRANCH_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.PATCH,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "updateBranchName",
@@ -118,19 +128,21 @@ public class FranchiseRouterRest {
                             operationId = "updateBranchName",
                             summary = "Update branch name",
                             parameters = {
-                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true)
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
                             },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = NamePayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "200", description = "Branch updated", content = @Content(schema = @Schema(implementation = BranchResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Franchise or branch not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise or branch not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate branch name in franchise", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = PRODUCTS_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.POST,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "addProduct",
@@ -138,18 +150,21 @@ public class FranchiseRouterRest {
                             operationId = "addProduct",
                             summary = "Add a new product to a branch",
                             parameters = {
-                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true)
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
                             },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = CreateProductPayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "201", description = "Product created", content = @Content(schema = @Schema(implementation = ProductResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Franchise or branch not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise or branch not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate product name in branch", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = PRODUCT_PATH,
+                    produces = {MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.DELETE,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "removeProduct",
@@ -157,19 +172,20 @@ public class FranchiseRouterRest {
                             operationId = "removeProduct",
                             summary = "Remove a product from a branch",
                             parameters = {
-                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true)
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
                             },
                             responses = {
                                     @ApiResponse(responseCode = "204", description = "Product deleted"),
-                                    @ApiResponse(responseCode = "404", description = "Product, branch, or franchise not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Product, branch, or franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = PRODUCT_STOCK_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.PATCH,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "updateProductStock",
@@ -177,20 +193,21 @@ public class FranchiseRouterRest {
                             operationId = "updateProductStock",
                             summary = "Modify stock quantity of a product",
                             parameters = {
-                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true)
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
                             },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = UpdateStockPayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "200", description = "Stock updated", content = @Content(schema = @Schema(implementation = ProductResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Product not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Product, branch, or franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = PRODUCT_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.PATCH,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "updateProductName",
@@ -198,34 +215,39 @@ public class FranchiseRouterRest {
                             operationId = "updateProductName",
                             summary = "Update product name",
                             parameters = {
-                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true),
-                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true)
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "branchId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1")),
+                                    @Parameter(in = ParameterIn.PATH, name = "productId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
                             },
                             requestBody = @RequestBody(required = true, content = @Content(schema = @Schema(implementation = NamePayload.class))),
                             responses = {
                                     @ApiResponse(responseCode = "200", description = "Product name updated", content = @Content(schema = @Schema(implementation = ProductResponse.class))),
-                                    @ApiResponse(responseCode = "404", description = "Product not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Product, branch, or franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "409", description = "Duplicate product name in branch", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             ),
             @RouterOperation(
                     path = TOP_STOCK_PATH,
-                    produces = {MediaType.APPLICATION_JSON_VALUE},
+                    produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE},
                     method = RequestMethod.GET,
                     beanClass = FranchiseHandler.class,
                     beanMethod = "getTopStockProducts",
                     operation = @Operation(
                             operationId = "getTopStockProducts",
                             summary = "Get the product with highest stock per branch for a franchise",
-                            parameters = {@Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true)},
+                            parameters = {
+                                    @Parameter(in = ParameterIn.PATH, name = "franchiseId", required = true, schema = @Schema(type = "integer", format = "int64", minimum = "1"))
+                            },
                             responses = {
                                     @ApiResponse(
                                             responseCode = "200",
                                             description = "List of highest stock products indicating their branch",
                                             content = @Content(array = @ArraySchema(schema = @Schema(implementation = BranchTopProductResponse.class)))
                                     ),
-                                    @ApiResponse(responseCode = "404", description = "Franchise not found")
+                                    @ApiResponse(responseCode = "400", description = "Validation error", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+                                    @ApiResponse(responseCode = "404", description = "Franchise not found", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
                             }
                     )
             )

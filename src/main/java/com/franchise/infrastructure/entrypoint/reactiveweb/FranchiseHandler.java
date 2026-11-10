@@ -91,18 +91,18 @@ public class FranchiseHandler {
                         validationHandler.requireValidBody(request, CreateProductPayload.class)
                 )
                 .flatMap(tuple -> franchiseUseCase.addProductToBranch(
-                        tuple.getT1(),
-                        tuple.getT2(),
-                        tuple.getT3().name(),
-                        tuple.getT3().stock()
-                ))
-                .map(ProductResponse::fromDomain)
-                .flatMap(response -> ServerResponse
-                        .created(URI.create("/api/v1/franchises/" + request.pathVariable(FRANCHISE_ID)
-                                + "/branches/" + response.branchId()
-                                + "/products/" + response.id()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .bodyValue(response));
+                                tuple.getT1(),
+                                tuple.getT2(),
+                                tuple.getT3().name(),
+                                tuple.getT3().stock()
+                        )
+                        .map(ProductResponse::fromDomain)
+                        .flatMap(response -> ServerResponse
+                                .created(URI.create("/api/v1/franchises/" + tuple.getT1()
+                                        + "/branches/" + response.branchId()
+                                        + "/products/" + response.id()))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(response)));
     }
 
     public Mono<ServerResponse> removeProduct(ServerRequest request) {
