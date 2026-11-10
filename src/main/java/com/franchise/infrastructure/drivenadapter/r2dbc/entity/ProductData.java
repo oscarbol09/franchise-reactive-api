@@ -20,9 +20,6 @@ public class ProductData {
     @Column("stock")
     private Integer stock;
 
-    public ProductData() {
-    }
-
     public ProductData(Long id, Long branchId, String name, Integer stock) {
         this.id = id;
         this.branchId = branchId;
@@ -34,31 +31,15 @@ public class ProductData {
         return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
     public Long getBranchId() {
         return branchId;
-    }
-
-    public void setBranchId(Long branchId) {
-        this.branchId = branchId;
     }
 
     public String getName() {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
-    }
-
     public Integer getStock() {
         return stock;
-    }
-
-    public void setStock(Integer stock) {
-        this.stock = stock;
     }
 }

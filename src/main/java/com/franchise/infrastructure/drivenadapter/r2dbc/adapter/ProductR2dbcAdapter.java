@@ -1,10 +1,15 @@
 package com.franchise.infrastructure.drivenadapter.r2dbc.adapter;
 
+import com.franchise.domain.exception.DuplicateResourceException;
+import com.franchise.domain.exception.ErrorCode;
 import com.franchise.domain.model.BranchTopProduct;
 import com.franchise.domain.model.Product;
 import com.franchise.domain.model.gateway.ProductRepositoryPort;
 import com.franchise.infrastructure.drivenadapter.r2dbc.entity.ProductData;
 import com.franchise.infrastructure.drivenadapter.r2dbc.repository.ProductReactiveRepository;
+import java.util.List;
+import java.util.Objects;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
@@ -46,7 +51,11 @@ public class ProductR2dbcAdapter implements ProductRepositoryPort {
     public Mono<Product> save(Product product) {
         ProductData entity = new ProductData(product.id(), product.branchId(), product.name(), product.stock());
         return repository.save(entity)
-                .map(saved -> new Product(saved.getId(), saved.getBranchId(), saved.getName(), saved.getStock()));
+                .map(saved -> new Product(saved.getId(), saved.getBranchId(), saved.getName(), saved.getStock()))
+                .onErrorMap(DuplicateKeyException.class, ex -> new DuplicateResourceException(
+                        ErrorCode.DUPLICATE_PRODUCT_NAME,
+                        "Product '" + product.name() + "' already exists in branch " + product.branchId()
+                ));
     }
 
     @Override
@@ -58,6 +67,15 @@ public class ProductR2dbcAdapter implements ProductRepositoryPort {
     @Override
     public Flux<Product> findAllByBranchId(Long branchId) {
         return repository.findAllByBranchIdOrderByIdAsc(branchId)
+                .map(data -> new Product(data.getId(), data.getBranchId(), data.getName(), data.getStock()));
+    }
+
+    @Override
+    public Flux<Product> findAllByBranchIds(List<Long> branchIds) {
+        if (branchIds == null || branchIds.isEmpty()) {
+            return Flux.empty();
+        }
+        return repository.findAllByBranchIdInOrderByIdAsc(branchIds)
                 .map(data -> new Product(data.getId(), data.getBranchId(), data.getName(), data.getStock()));
     }
 
@@ -85,11 +103,11 @@ public class ProductR2dbcAdapter implements ProductRepositoryPort {
                     String branchName = row.get("branch_name", String.class);
                     Long productId = row.get("product_id", Long.class);
                     String productName = row.get("product_name", String.class);
-                    Integer stock = row.get("stock", Integer.class);
+                    Integer stock = Objects.requireNonNull(row.get("stock", Integer.class));
                     return new BranchTopProduct(
                             branchId,
                             branchName,
-                            new Product(productId, branchId, productName, stock != null ? stock : 0)
+                            new Product(productId, branchId, productName, stock)
                     );
                 })
                 .all();

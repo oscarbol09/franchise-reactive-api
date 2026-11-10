@@ -17,9 +17,6 @@ public class BranchData {
     @Column("name")
     private String name;
 
-    public BranchData() {
-    }
-
     public BranchData(Long id, Long franchiseId, String name) {
         this.id = id;
         this.franchiseId = franchiseId;
@@ -30,23 +27,11 @@ public class BranchData {
         return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
     public Long getFranchiseId() {
         return franchiseId;
     }
 
-    public void setFranchiseId(Long franchiseId) {
-        this.franchiseId = franchiseId;
-    }
-
     public String getName() {
         return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
     }
 }

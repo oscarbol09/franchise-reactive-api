@@ -1,10 +1,13 @@
 package com.franchise.infrastructure.drivenadapter.r2dbc.adapter;
 
+import com.franchise.domain.exception.DuplicateResourceException;
+import com.franchise.domain.exception.ErrorCode;
 import com.franchise.domain.model.Branch;
 import com.franchise.domain.model.gateway.BranchRepositoryPort;
 import com.franchise.infrastructure.drivenadapter.r2dbc.entity.BranchData;
 import com.franchise.infrastructure.drivenadapter.r2dbc.repository.BranchReactiveRepository;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,7 +25,11 @@ public class BranchR2dbcAdapter implements BranchRepositoryPort {
     public Mono<Branch> save(Branch branch) {
         BranchData entity = new BranchData(branch.id(), branch.franchiseId(), branch.name());
         return repository.save(entity)
-                .map(saved -> new Branch(saved.getId(), saved.getFranchiseId(), saved.getName(), branch.products()));
+                .map(saved -> new Branch(saved.getId(), saved.getFranchiseId(), saved.getName(), branch.products()))
+                .onErrorMap(DuplicateKeyException.class, ex -> new DuplicateResourceException(
+                        ErrorCode.DUPLICATE_BRANCH_NAME,
+                        "Branch '" + branch.name() + "' already exists in franchise " + branch.franchiseId()
+                ));
     }
 
     @Override

@@ -8,7 +8,7 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 20s
   r2dbc:
-    url: ${SPRING_R2DBC_URL:r2dbc:h2:mem:///franchise_db?options=DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
+    url: ${SPRING_R2DBC_URL:r2dbc:h2:mem:///franchise_db?options=DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;IGNORECASE=TRUE}
     username: ${SPRING_R2DBC_USERNAME:sa}
     password: ${SPRING_R2DBC_PASSWORD:}
     pool:
@@ -17,7 +17,7 @@ spring:
       max-idle-time: 30m
   flyway:
     enabled: true
-    url: ${SPRING_FLYWAY_URL:jdbc:h2:mem:franchise_db;DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
+    url: ${SPRING_FLYWAY_URL:jdbc:h2:mem:franchise_db;DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;IGNORECASE=TRUE}
     user: ${SPRING_FLYWAY_USER:sa}
     password: ${SPRING_FLYWAY_PASSWORD:}
     locations: classpath:db/migration
