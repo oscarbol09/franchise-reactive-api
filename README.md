@@ -1,0 +1,162 @@
+# Franchise Management Reactive API
+
+API REST reactiva y no bloqueante desarrollada en **Java 21** y **Spring Boot 3.3 (Spring WebFlux)** bajo los principios de **Clean Architecture** (Puertos y Adaptadores). Gestiona redes de franquicias, sus sucursales asociadas y el catálogo de productos e inventario por sucursal.
+
+---
+
+## Arquitectura y Decisiones Técnicas
+
+El sistema separa estrictamente las reglas de negocio del framework y los detalles de infraestructura, verificando el aislamiento en tiempo de construcción mediante **ArchUnit**:
+
+```mermaid
+flowchart LR
+    Client["HTTP Client"] --> Router["FranchiseRouterRest (Functional WebFlux)"]
+    Router --> Handler["FranchiseHandler + Bean Validation"]
+    Handler --> UseCase["FranchiseUseCase (Domain Core)"]
+    UseCase --> Ports["Repository Ports (Interfaces)"]
+    Ports --> Adapter["R2DBC Driven Adapters"]
+    Adapter --> DB[("MySQL 8.4 / H2 R2DBC")]
+```
+
+1. **Programación Funcional y Reactiva (`Spring WebFlux` + `Project Reactor`):**
+   * Exposición de endpoints mediante ruteo funcional (`RouterFunction<ServerResponse>` y `FranchiseHandler`) en lugar de controladores imperativos acoplados a anotaciones.
+   * Flujos 100% no bloqueantes (`Mono<T>` / `Flux<T>`) desde la frontera HTTP hasta el driver **R2DBC**. Validado en la suite de pruebas mediante **BlockHound**.
+2. **Persistencia Reactiva (`Spring Data R2DBC` + `Flyway`):**
+   * Modelo relacional normalizado (`franchises` 1:N `branches` 1:N `products`) con restricciones de unicidad e índices compuestos `(branch_id, stock DESC)`.
+   * La consulta del **producto con mayor stock por sucursal para una franquicia** se resuelve en una única operación SQL utilizando la función de ventana `ROW_NUMBER() OVER (PARTITION BY b.id ORDER BY p.stock DESC, p.id ASC)`, evitando el problema de $N+1$ consultas en memoria.
+3. **Estandarización de Errores (`RFC 9457 ProblemDetail`):**
+   * Manejo centralizado en `GlobalErrorWebExceptionHandler` devolviendo respuestas `application/problem+json` con códigos de dominio semánticos (`400 Bad Request`, `404 Not Found`, `409 Conflict`).
+
+---
+
+## Estructura del Proyecto
+
+```text
+├── Dockerfile                          # Construcción multi-stage (JDK 21 -> JRE 21 no-root con capas extraídas)
+├── docker-compose.yml                  # Orquestación local: MySQL 8.4 + API Reactiva con healthchecks
+├── api-requests.http                   # Colección ejecutable de peticiones HTTP para los 10 endpoints
+├── infra/
+│   ├── terraform/                      # IaC en Terraform (VPC, Subnets privadas, RDS MySQL 8.4, ECR, ECS)
+│   └── cloudformation/                 # Plantilla equivalente en AWS CloudFormation
+└── src/
+    ├── main/java/com/accenture/franchise/
+    │   ├── domain/
+    │   │   ├── exception/              # Excepciones de negocio y catálogo ErrorCode
+    │   │   ├── model/                  # Records inmutables (Franchise, Branch, Product) y Gateways
+    │   │   └── usecase/                # Orquestación reactiva pura (FranchiseUseCase)
+    │   └── infrastructure/
+    │       ├── config/                 # Inyección de casos de uso y configuración OpenAPI
+    │       ├── drivenadapter/r2dbc/    # Entidades R2DBC, repositorios reactivos y adaptadores
+    │       └── entrypoint/reactiveweb/ # RouterRest, Handler, validación y manejador RFC 9457
+    └── test/java/com/accenture/franchise/
+        ├── architecture/               # Reglas ArchUnit (aislamiento estricto del dominio)
+        ├── domain/usecase/             # Pruebas unitarias reactivas con StepVerifier y BlockHound
+        └── infrastructure/             # Pruebas de integración extremo a extremo con WebTestClient
+```
+
+---
+
+## Ejecución desde Entorno Local
+
+### Prerrequisitos
+* **JDK 21** (o **Docker** y **Docker Compose** si se ejecuta contenerizado).
+
+### Opción 1: Despliegue Completo con Docker Compose (MySQL 8.4 + API)
+Levanta una instancia real de **MySQL 8.4**, ejecuta las migraciones **Flyway** y expone el servicio en el puerto `8080`:
+
+```bash
+docker compose up --build -d
+```
+
+Verificar estado de salud:
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+### Opción 2: Ejecución Directa con Maven Wrapper (Perfil Local In-Memory R2DBC)
+Por defecto, si no se definen variables de entorno de MySQL externo, la aplicación arranca de forma autónoma sobre **R2DBC en modo de compatibilidad MySQL** con migraciones Flyway automáticas (sin requerir demonios externos):
+
+```bash
+# En Linux / macOS
+./mvnw spring-boot:run
+
+# En Windows (PowerShell)
+.\mvnw.cmd spring-boot:run
+```
+
+* **Swagger UI (Documentación Interactiva OpenAPI 3):** `http://localhost:8080/swagger-ui.html`
+* **OpenAPI JSON Spec:** `http://localhost:8080/v3/api-docs`
+
+---
+
+## Ejecución de Pruebas y Cobertura
+
+Para ejecutar las pruebas unitarias (`StepVerifier` + `BlockHound`), las pruebas de integración (`WebTestClient`), la validación arquitectónica (`ArchUnit`) y el umbral de cobertura (`JaCoCo`):
+
+```bash
+./mvnw clean verify
+```
+
+El reporte de cobertura se genera en `target/site/jacoco/index.html`.
+
+---
+
+## Referencia de Endpoints
+
+| Requisito | Método | Endpoint | Cuerpo de Petición (JSON) | Respuesta |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Crear franquicia** | `POST` | `/api/v1/franchises` | `{"name": "Franquicia Norte"}` | `201 Created` |
+| **2. Actualizar nombre de franquicia** *(Extra)* | `PATCH` | `/api/v1/franchises/{franchiseId}` | `{"name": "Franquicia Global"}` | `200 OK` |
+| **3. Consultar detalle de franquicia** | `GET` | `/api/v1/franchises/{franchiseId}` | — | `200 OK` |
+| **4. Agregar sucursal a franquicia** | `POST` | `/api/v1/franchises/{franchiseId}/branches` | `{"name": "Sucursal Centro"}` | `201 Created` |
+| **5. Actualizar nombre de sucursal** *(Extra)* | `PATCH` | `/api/v1/franchises/{franchiseId}/branches/{branchId}` | `{"name": "Sucursal Parque"}` | `200 OK` |
+| **6. Agregar producto a sucursal** | `POST` | `/api/v1/franchises/{franchiseId}/branches/{branchId}/products` | `{"name": "Café Origen", "stock": 150}` | `201 Created` |
+| **7. Eliminar producto de sucursal** | `DELETE` | `/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}` | — | `204 No Content` |
+| **8. Modificar stock de producto** | `PATCH` | `/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}/stock` | `{"stock": 280}` | `200 OK` |
+| **9. Actualizar nombre de producto** *(Extra)* | `PATCH` | `/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}` | `{"name": "Café Especial"}` | `200 OK` |
+| **10. Producto con mayor stock por sucursal** | `GET` | `/api/v1/franchises/{franchiseId}/top-stock-products` | — | `200 OK` |
+
+### Ejemplo de Respuesta: Producto con Mayor Stock por Sucursal
+`GET /api/v1/franchises/1/top-stock-products`
+```json
+[
+  {
+    "branchId": 1,
+    "branchName": "Sucursal El Poblado",
+    "productId": 2,
+    "productName": "Café Cumbre Reserva",
+    "stock": 450
+  },
+  {
+    "branchId": 2,
+    "branchName": "Sucursal Bogotá",
+    "productId": 4,
+    "productName": "Nevado Arequipe",
+    "stock": 310
+  }
+]
+```
+
+---
+
+## Infraestructura como Código (IaC)
+
+El directorio `infra/` incluye dos alternativas listas para aprovisionar la capa de persistencia (**Amazon RDS MySQL 8.4** en subredes privadas con credenciales rotadas en AWS Secrets Manager) y el registro de contenedores (**Amazon ECR**):
+
+* **Terraform (`infra/terraform/`):**
+  ```bash
+  cd infra/terraform
+  terraform init
+  terraform plan -var="environment=prod"
+  ```
+* **AWS CloudFormation (`infra/cloudformation/franchise-stack.yaml`):**
+  ```bash
+  aws cloudformation validate-template --template-body file://infra/cloudformation/franchise-stack.yaml
+  ```
+
+---
+
+## Limitaciones Conocidas y Trade-offs
+
+* **Desempate en Top Stock por Sucursal:** Cuando una sucursal tiene dos productos empatados con el mismo stock máximo, la ventana `ROW_NUMBER() OVER (PARTITION BY b.id ORDER BY p.stock DESC, p.id ASC)` selecciona de forma determinista el producto registrado primero (`id ASC`) para garantizar exactamente un producto líder por sucursal.
+* **Transacciones Distribuidas:** El servicio opera sobre una única base de datos relacional reactiva; en caso de escalar a eventos de dominio hacia otros microservicios, se recomienda incorporar una tabla *Transactional Outbox*.

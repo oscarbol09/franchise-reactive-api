@@ -1,0 +1,72 @@
+# ==============================================================================
+# Franchise Reactive API — End-to-End Request Suite (.http / REST Client)
+# ==============================================================================
+@baseUrl = http://localhost:8080/api/v1/franchises
+
+### 1. Create a new Franchise (Criterion #2)
+POST {{baseUrl}}
+Content-Type: application/json
+
+{
+  "name": "Franquicia Café Colombia"
+}
+
+### 2. [Bonus] Update Franchise Name
+PATCH {{baseUrl}}/1
+Content-Type: application/json
+
+{
+  "name": "Franquicia Café Internacional"
+}
+
+### 3. Add a new Branch to the Franchise (Criterion #3)
+POST {{baseUrl}}/1/branches
+Content-Type: application/json
+
+{
+  "name": "Sucursal Medellín"
+}
+
+### 4. [Bonus] Update Branch Name
+PATCH {{baseUrl}}/1/branches/1
+Content-Type: application/json
+
+{
+  "name": "Sucursal El Poblado"
+}
+
+### 5. Add a new Product to the Branch (Criterion #4)
+POST {{baseUrl}}/1/branches/1/products
+Content-Type: application/json
+
+{
+  "name": "Café Origen Antioquia",
+  "stock": 140
+}
+
+### 6. Modify Product Stock (Criterion #6)
+PATCH {{baseUrl}}/1/branches/1/products/1/stock
+Content-Type: application/json
+
+{
+  "stock": 280
+}
+
+### 7. [Bonus] Update Product Name
+PATCH {{baseUrl}}/1/branches/1/products/1
+Content-Type: application/json
+
+{
+  "name": "Café Origen Reserva Especial"
+}
+
+### 8. Get Top Stock Product per Branch for a Franchise (Criterion #7)
+GET {{baseUrl}}/1/top-stock-products
+Accept: application/json
+
+### 9. Get Full Franchise Hierarchy Detail
+GET {{baseUrl}}/1
+Accept: application/json
+
+### 10. Remove a Product from a Branch (Criterion #5)
+DELETE {{baseUrl}}/1/branches/1/products/1
