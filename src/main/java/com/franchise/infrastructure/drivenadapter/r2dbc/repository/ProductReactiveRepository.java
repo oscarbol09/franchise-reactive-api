@@ -28,16 +28,16 @@ public interface ProductReactiveRepository extends ReactiveCrudRepository<Produc
     Flux<ProductData> findAllByBranchIdInOrderByIdAsc(Collection<Long> branchIds);
 
     @Query("""
-            SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
-            FROM products
-            WHERE branch_id = :branchId AND LOWER(name) = LOWER(:name)
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM products WHERE branch_id = :branchId AND name = :name
+            ) THEN TRUE ELSE FALSE END
             """)
     Mono<Boolean> existsByBranchIdAndNameIgnoreCase(Long branchId, String name);
 
     @Query("""
-            SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
-            FROM products
-            WHERE branch_id = :branchId AND LOWER(name) = LOWER(:name) AND id <> :excludedId
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM products WHERE branch_id = :branchId AND name = :name AND id <> :excludedId
+            ) THEN TRUE ELSE FALSE END
             """)
     Mono<Boolean> existsByBranchIdAndNameIgnoreCaseAndIdNot(Long branchId, String name, Long excludedId);
 }

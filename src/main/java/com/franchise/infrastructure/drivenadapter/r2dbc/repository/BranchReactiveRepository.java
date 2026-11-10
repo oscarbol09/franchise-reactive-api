@@ -8,21 +8,27 @@ import reactor.core.publisher.Mono;
 
 public interface BranchReactiveRepository extends ReactiveCrudRepository<BranchData, Long> {
 
+    @Query("""
+            SELECT id, franchise_id, name
+            FROM branches
+            WHERE id = :id AND franchise_id = :franchiseId
+            FOR UPDATE
+            """)
     Mono<BranchData> findByIdAndFranchiseId(Long id, Long franchiseId);
 
     Flux<BranchData> findAllByFranchiseIdOrderByIdAsc(Long franchiseId);
 
     @Query("""
-            SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
-            FROM branches
-            WHERE franchise_id = :franchiseId AND LOWER(name) = LOWER(:name)
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM branches WHERE franchise_id = :franchiseId AND name = :name
+            ) THEN TRUE ELSE FALSE END
             """)
     Mono<Boolean> existsByFranchiseIdAndNameIgnoreCase(Long franchiseId, String name);
 
     @Query("""
-            SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
-            FROM branches
-            WHERE franchise_id = :franchiseId AND LOWER(name) = LOWER(:name) AND id <> :excludedId
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM branches WHERE franchise_id = :franchiseId AND name = :name AND id <> :excludedId
+            ) THEN TRUE ELSE FALSE END
             """)
     Mono<Boolean> existsByFranchiseIdAndNameIgnoreCaseAndIdNot(Long franchiseId, String name, Long excludedId);
 }

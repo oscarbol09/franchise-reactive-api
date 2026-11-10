@@ -7,9 +7,17 @@ import reactor.core.publisher.Mono;
 
 public interface FranchiseReactiveRepository extends ReactiveCrudRepository<FranchiseData, Long> {
 
-    @Query("SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END FROM franchises WHERE LOWER(name) = LOWER(:name)")
+    @Query("""
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM franchises WHERE name = :name
+            ) THEN TRUE ELSE FALSE END
+            """)
     Mono<Boolean> existsByNameIgnoreCase(String name);
 
-    @Query("SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END FROM franchises WHERE LOWER(name) = LOWER(:name) AND id <> :excludedId")
+    @Query("""
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM franchises WHERE name = :name AND id <> :excludedId
+            ) THEN TRUE ELSE FALSE END
+            """)
     Mono<Boolean> existsByNameIgnoreCaseAndIdNot(String name, Long excludedId);
 }

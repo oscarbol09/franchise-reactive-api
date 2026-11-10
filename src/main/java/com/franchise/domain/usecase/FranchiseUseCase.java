@@ -179,15 +179,8 @@ public class FranchiseUseCase {
     }
 
     private Mono<List<Branch>> loadProductsForBranches(List<Branch> branches, List<Long> branchIds) {
-        Flux<Product> batchProducts = productRepository.findAllByBranchIds(branchIds);
-        if (batchProducts == null) {
-            return Flux.fromIterable(branches)
-                    .concatMap(branch -> productRepository.findAllByBranchId(branch.id())
-                            .collectList()
-                            .map(branch::withProducts))
-                    .collectList();
-        }
-        return batchProducts.collectList()
+        return productRepository.findAllByBranchIds(branchIds)
+                .collectList()
                 .map(products -> {
                     Map<Long, List<Product>> byBranch = products.stream()
                             .collect(Collectors.groupingBy(Product::branchId));
