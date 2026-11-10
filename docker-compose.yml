@@ -1,11 +1,11 @@
 services:
   mysql-db:
-    image: mysql:8.4
+    image: mysql:8.4.8
     container_name: franchise-mysql
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: franchise_db
-      MYSQL_USER: franchise_user
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-franchise_db}
+      MYSQL_USER: ${MYSQL_USER:-franchise_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret_pwd}
     ports:
@@ -13,10 +13,18 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h localhost -u \"$${MYSQL_USER}\" --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -u \"$${MYSQL_USER}\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - franchise-net
 
@@ -31,19 +39,27 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: 8080
-      SPRING_R2DBC_URL: r2dbc:mysql://mysql-db:3306/franchise_db?sslMode=PREFERRED&tlsVersion=TLSv1.3
-      SPRING_R2DBC_USERNAME: franchise_user
+      SPRING_R2DBC_URL: r2dbc:mysql://mysql-db:3306/${MYSQL_DATABASE:-franchise_db}?sslMode=PREFERRED&tlsVersion=TLSv1.3
+      SPRING_R2DBC_USERNAME: ${MYSQL_USER:-franchise_user}
       SPRING_R2DBC_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
-      SPRING_FLYWAY_URL: jdbc:mysql://mysql-db:3306/franchise_db?sslMode=PREFERRED&tlsVersions=TLSv1.3
-      SPRING_FLYWAY_USER: franchise_user
+      SPRING_FLYWAY_URL: jdbc:mysql://mysql-db:3306/${MYSQL_DATABASE:-franchise_db}?sslMode=PREFERRED&tlsVersions=TLSv1.3
+      SPRING_FLYWAY_USER: ${MYSQL_USER:-franchise_user}
       SPRING_FLYWAY_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness || exit 1"]
+      test: ["CMD-SHELL", "bash -c \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health/readiness HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\""]
       interval: 10s
       timeout: 5s
       retries: 6
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - franchise-net
 
