@@ -10,14 +10,14 @@ public record Branch(
         List<Product> products
 ) {
     public Branch {
+        if (franchiseId == null || franchiseId <= 0) {
+            throw new DomainValidationException("Franchise identifier must be a positive number");
+        }
         name = normalizeName(name);
         products = products != null ? List.copyOf(products) : List.of();
     }
 
     public static Branch createNew(Long franchiseId, String name) {
-        if (franchiseId == null || franchiseId <= 0) {
-            throw new DomainValidationException("Franchise identifier must be a positive number");
-        }
         return new Branch(null, franchiseId, name, List.of());
     }
 

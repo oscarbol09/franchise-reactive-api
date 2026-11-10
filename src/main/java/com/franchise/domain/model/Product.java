@@ -9,6 +9,9 @@ public record Product(
         int stock
 ) {
     public Product {
+        if (branchId == null || branchId <= 0) {
+            throw new DomainValidationException("Branch identifier must be a positive number");
+        }
         name = normalizeName(name);
         if (stock < 0) {
             throw new DomainValidationException("Product stock cannot be negative: " + stock);
@@ -16,9 +19,6 @@ public record Product(
     }
 
     public static Product createNew(Long branchId, String name, int stock) {
-        if (branchId == null || branchId <= 0) {
-            throw new DomainValidationException("Branch identifier must be a positive number");
-        }
         return new Product(null, branchId, name, stock);
     }
 
