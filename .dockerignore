@@ -1,0 +1,10 @@
+target/
+build/
+.gradle/
+.git/
+.idea/
+.vscode/
+*.md
+*.pdf
+infra/
+docker-compose.yml
