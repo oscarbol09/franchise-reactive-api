@@ -1,10 +1,40 @@
+# Build outputs
 target/
 build/
 .gradle/
+out/
+
+# Version control & CI
 .git/
+.gitignore
+.github/
+
+# IDE & Editor metadata
 .idea/
 .vscode/
+.settings/
+.project
+.classpath
+*.iws
+*.iml
+*.ipr
+
+# Secrets, certificates & local environment files
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Documentation, local scripts & IaC templates
 *.md
 *.pdf
+*.log
+*.tmp
+api-requests.http
 infra/
 docker-compose.yml
+Dockerfile
+.dockerignore
