@@ -9,11 +9,11 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret_pwd}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "franchise_user", "-p${MYSQL_PASSWORD:-franchise_secret_pwd}"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h localhost -u \"$${MYSQL_USER}\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -31,10 +31,10 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: 8080
-      SPRING_R2DBC_URL: r2dbc:mysql://mysql-db:3306/franchise_db?tlsVersion=TLSv1.2
+      SPRING_R2DBC_URL: r2dbc:mysql://mysql-db:3306/franchise_db?sslMode=PREFERRED&tlsVersion=TLSv1.3
       SPRING_R2DBC_USERNAME: franchise_user
       SPRING_R2DBC_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
-      SPRING_FLYWAY_URL: jdbc:mysql://mysql-db:3306/franchise_db?allowPublicKeyRetrieval=true&useSSL=false
+      SPRING_FLYWAY_URL: jdbc:mysql://mysql-db:3306/franchise_db?sslMode=PREFERRED&tlsVersions=TLSv1.3
       SPRING_FLYWAY_USER: franchise_user
       SPRING_FLYWAY_PASSWORD: ${MYSQL_PASSWORD:-franchise_secret_pwd}
     ports:

@@ -5,6 +5,7 @@ import com.franchise.domain.exception.DomainException;
 import com.franchise.domain.exception.DomainValidationException;
 import com.franchise.domain.exception.DuplicateResourceException;
 import com.franchise.domain.exception.ResourceNotFoundException;
+import com.franchise.infrastructure.entrypoint.reactiveweb.security.SecurityHeadersWebFilter;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -43,6 +44,7 @@ public class GlobalErrorWebExceptionHandler implements ErrorWebExceptionHandler 
         }
 
         ProblemDetail problem = buildProblemDetail(exchange, ex);
+        SecurityHeadersWebFilter.applySecurityHeaders(exchange);
         exchange.getResponse().setStatusCode(HttpStatusCode.valueOf(problem.getStatus()));
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
 

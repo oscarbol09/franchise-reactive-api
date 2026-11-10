@@ -232,16 +232,36 @@ class FranchiseIntegrationTest {
                 .jsonPath("$.status").isEqualTo(404)
                 .jsonPath("$.errorCode").isEqualTo("ERR-404-FRANCHISE");
 
-        // 409 Conflict on duplicate franchise name
+        // 409 Conflict on duplicate franchise name (exact and case-insensitive)
         webTestClient.post()
                 .uri("/api/v1/franchises")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(new NamePayload("Juan Valdez Global"))
+                .bodyValue(new NamePayload("juan valdez global"))
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.CONFLICT)
+                .expectHeader().valueEquals("X-Content-Type-Options", "nosniff")
+                .expectHeader().valueEquals("X-Frame-Options", "DENY")
+                .expectHeader().valueEquals("Referrer-Policy", "no-referrer")
+                .expectHeader().valueEquals("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(409)
                 .jsonPath("$.errorCode").isEqualTo("ERR-409-FRANCHISE");
+
+        // Actuator health returns UP without leaking internal database/disk topology details
+        webTestClient.get()
+                .uri("/actuator/health")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Content-Type-Options", "nosniff")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("UP")
+                .jsonPath("$.components").doesNotExist();
+
+        // Actuator metrics endpoint is not exposed publicly
+        webTestClient.get()
+                .uri("/actuator/metrics")
+                .exchange()
+                .expectStatus().isNotFound();
 
         // 400 Bad Request on blank name
         webTestClient.post()

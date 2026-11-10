@@ -7,14 +7,21 @@ spring:
     name: franchise-api
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  codec:
+    max-in-memory-size: 16KB
   r2dbc:
     url: ${SPRING_R2DBC_URL:r2dbc:h2:mem:///franchise_db?options=DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;IGNORECASE=TRUE}
     username: ${SPRING_R2DBC_USERNAME:sa}
     password: ${SPRING_R2DBC_PASSWORD:}
     pool:
+      enabled: true
       initial-size: 5
       max-size: 20
-      max-idle-time: 30m
+      max-idle-time: 10m
+      max-life-time: 30m
+      max-acquire-time: 3s
+      max-create-connection-time: 5s
+      validation-depth: local
   flyway:
     enabled: true
     url: ${SPRING_FLYWAY_URL:jdbc:h2:mem:franchise_db;DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;IGNORECASE=TRUE}
@@ -32,9 +39,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
       probes:
         enabled: true
