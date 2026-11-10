@@ -82,4 +82,13 @@ jobs:
 
       - name: Validate CloudFormation Template Syntax
         run: |
-          python3 -c "import yaml; yaml.safe_load(open('infra/cloudformation/franchise-stack.yaml'))"
+          python3 -c "
+          import yaml
+          class CfnLoader(yaml.SafeLoader):
+              pass
+          for tag in ['!Ref', '!Sub', '!GetAtt', '!Join', '!Select', '!Split', '!FindInMap', '!Base64', '!Cidr']:
+              CfnLoader.add_constructor(tag, lambda loader, node: node.value)
+          data = yaml.load(open('infra/cloudformation/franchise-stack.yaml'), Loader=CfnLoader)
+          assert 'Resources' in data and len(data['Resources']) > 0
+          print(f'CloudFormation template valid with {len(data[\"Resources\"])} resources.')
+          "
