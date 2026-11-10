@@ -31,3 +31,55 @@ jobs:
 
       - name: Execute Test Suite, ArchUnit & JaCoCo Coverage Gate
         run: ./mvnw clean verify -B
+
+      - name: Archive Code Coverage Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+  docker-build:
+    name: Docker Container Build Verification
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Application Image (Dry-Run Packaging)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: franchise-api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  iac-validation:
+    name: Infrastructure as Code (IaC) Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Validate Terraform Syntax & Configuration
+        run: |
+          cd infra/terraform
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate CloudFormation Template Syntax
+        run: |
+          python3 -c "import yaml; yaml.safe_load(open('infra/cloudformation/franchise-stack.yaml'))"
