@@ -2,6 +2,7 @@ package com.franchise.domain.model.gateway;
 
 import com.franchise.domain.model.BranchTopProduct;
 import com.franchise.domain.model.Product;
+import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -12,6 +13,11 @@ public interface ProductRepositoryPort {
     Mono<Product> findByIdAndBranchId(Long id, Long branchId);
 
     Flux<Product> findAllByBranchId(Long branchId);
+
+    default Flux<Product> findAllByBranchIds(List<Long> branchIds) {
+        return Flux.fromIterable(branchIds)
+                .concatMap(this::findAllByBranchId);
+    }
 
     Mono<Void> deleteById(Long id);
 

@@ -11,7 +11,11 @@ import com.franchise.domain.model.Product;
 import com.franchise.domain.model.gateway.BranchRepositoryPort;
 import com.franchise.domain.model.gateway.FranchiseRepositoryPort;
 import com.franchise.domain.model.gateway.ProductRepositoryPort;
+import com.franchise.domain.model.gateway.TransactionalPort;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -20,122 +24,152 @@ public class FranchiseUseCase {
     private final FranchiseRepositoryPort franchiseRepository;
     private final BranchRepositoryPort branchRepository;
     private final ProductRepositoryPort productRepository;
+    private final TransactionalPort transactionalPort;
 
     public FranchiseUseCase(
             FranchiseRepositoryPort franchiseRepository,
             BranchRepositoryPort branchRepository,
             ProductRepositoryPort productRepository
     ) {
+        this(franchiseRepository, branchRepository, productRepository, TransactionalPort.passThrough());
+    }
+
+    public FranchiseUseCase(
+            FranchiseRepositoryPort franchiseRepository,
+            BranchRepositoryPort branchRepository,
+            ProductRepositoryPort productRepository,
+            TransactionalPort transactionalPort
+    ) {
         this.franchiseRepository = Objects.requireNonNull(franchiseRepository);
         this.branchRepository = Objects.requireNonNull(branchRepository);
         this.productRepository = Objects.requireNonNull(productRepository);
+        this.transactionalPort = Objects.requireNonNull(transactionalPort);
     }
 
     public Mono<Franchise> createFranchise(String name) {
         return Mono.fromCallable(() -> Franchise.createNew(name))
-                .flatMap(candidate -> franchiseRepository.existsByNameIgnoreCase(candidate.name())
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_FRANCHISE_NAME,
-                                        "Franchise with name '" + candidate.name() + "' already exists"))
-                                : franchiseRepository.save(candidate)));
+                .flatMap(candidate -> transactionalPort.executeInTransaction(
+                        franchiseRepository.existsByNameIgnoreCase(candidate.name())
+                                .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                        ? Mono.error(() -> new DuplicateResourceException(
+                                                ErrorCode.DUPLICATE_FRANCHISE_NAME,
+                                                "Franchise with name '" + candidate.name() + "' already exists"))
+                                        : franchiseRepository.save(candidate))));
     }
 
     public Mono<Franchise> updateFranchiseName(Long franchiseId, String newName) {
         return validatePositiveId(franchiseId, "franchiseId")
-                .then(Mono.defer(() -> findExistingFranchise(franchiseId)))
-                .map(existing -> existing.withUpdatedName(newName))
-                .flatMap(updated -> franchiseRepository.existsByNameIgnoreCaseAndIdNot(updated.name(), franchiseId)
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_FRANCHISE_NAME,
-                                        "Franchise with name '" + updated.name() + "' already exists"))
-                                : franchiseRepository.save(updated)));
+                .then(Mono.fromCallable(() -> Franchise.createNew(newName)))
+                .flatMap(validated -> transactionalPort.executeInTransaction(
+                        Mono.defer(() -> findExistingFranchise(franchiseId))
+                                .map(existing -> existing.withUpdatedName(validated.name()))
+                                .flatMap(updated -> franchiseRepository.existsByNameIgnoreCaseAndIdNot(
+                                                updated.name(), franchiseId)
+                                        .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                                ? Mono.error(() -> new DuplicateResourceException(
+                                                        ErrorCode.DUPLICATE_FRANCHISE_NAME,
+                                                        "Franchise with name '" + updated.name() + "' already exists"))
+                                                : franchiseRepository.save(updated)))));
     }
 
     public Mono<Franchise> getFranchiseDetail(Long franchiseId) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(Mono.defer(() -> findExistingFranchise(franchiseId)))
                 .flatMap(franchise -> branchRepository.findAllByFranchiseId(franchise.id())
-                        .flatMap(branch -> productRepository.findAllByBranchId(branch.id())
-                                .collectList()
-                                .map(branch::withProducts))
                         .collectList()
-                        .map(franchise::withBranches));
+                        .flatMap(branches -> {
+                            if (branches.isEmpty()) {
+                                return Mono.just(franchise.withBranches(List.of()));
+                            }
+                            List<Long> branchIds = branches.stream().map(Branch::id).toList();
+                            return loadProductsForBranches(branches, branchIds)
+                                    .map(franchise::withBranches);
+                        }));
     }
 
     public Mono<Branch> addBranchToFranchise(Long franchiseId, String branchName) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(Mono.fromCallable(() -> Branch.createNew(franchiseId, branchName)))
-                .flatMap(candidate -> findExistingFranchise(franchiseId)
-                        .then(branchRepository.existsByFranchiseIdAndNameIgnoreCase(franchiseId, candidate.name()))
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_BRANCH_NAME,
-                                        "Branch '" + candidate.name() + "' already exists in franchise " + franchiseId))
-                                : branchRepository.save(candidate)));
+                .flatMap(candidate -> transactionalPort.executeInTransaction(
+                        findExistingFranchise(franchiseId)
+                                .then(Mono.defer(() -> branchRepository.existsByFranchiseIdAndNameIgnoreCase(
+                                        franchiseId, candidate.name())))
+                                .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                        ? Mono.error(() -> new DuplicateResourceException(
+                                                ErrorCode.DUPLICATE_BRANCH_NAME,
+                                                "Branch '" + candidate.name() + "' already exists in franchise " + franchiseId))
+                                        : branchRepository.save(candidate))));
     }
 
     public Mono<Branch> updateBranchName(Long franchiseId, Long branchId, String newName) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(validatePositiveId(branchId, "branchId"))
-                .then(Mono.defer(() -> findExistingBranch(franchiseId, branchId)))
-                .map(existing -> existing.withUpdatedName(newName))
-                .flatMap(updated -> branchRepository.existsByFranchiseIdAndNameIgnoreCaseAndIdNot(
-                                franchiseId, updated.name(), branchId)
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_BRANCH_NAME,
-                                        "Branch '" + updated.name() + "' already exists in franchise " + franchiseId))
-                                : branchRepository.save(updated)));
+                .then(Mono.fromCallable(() -> Branch.createNew(franchiseId, newName)))
+                .flatMap(validated -> transactionalPort.executeInTransaction(
+                        Mono.defer(() -> findExistingBranch(franchiseId, branchId))
+                                .map(existing -> existing.withUpdatedName(validated.name()))
+                                .flatMap(updated -> branchRepository.existsByFranchiseIdAndNameIgnoreCaseAndIdNot(
+                                                franchiseId, updated.name(), branchId)
+                                        .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                                ? Mono.error(() -> new DuplicateResourceException(
+                                                        ErrorCode.DUPLICATE_BRANCH_NAME,
+                                                        "Branch '" + updated.name() + "' already exists in franchise " + franchiseId))
+                                                : branchRepository.save(updated)))));
     }
 
     public Mono<Product> addProductToBranch(Long franchiseId, Long branchId, String productName, int stock) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(validatePositiveId(branchId, "branchId"))
                 .then(Mono.fromCallable(() -> Product.createNew(branchId, productName, stock)))
-                .flatMap(candidate -> findExistingBranch(franchiseId, branchId)
-                        .then(productRepository.existsByBranchIdAndNameIgnoreCase(branchId, candidate.name()))
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_PRODUCT_NAME,
-                                        "Product '" + candidate.name() + "' already exists in branch " + branchId))
-                                : productRepository.save(candidate)));
+                .flatMap(candidate -> transactionalPort.executeInTransaction(
+                        findExistingBranch(franchiseId, branchId)
+                                .then(Mono.defer(() -> productRepository.existsByBranchIdAndNameIgnoreCase(
+                                        branchId, candidate.name())))
+                                .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                        ? Mono.error(() -> new DuplicateResourceException(
+                                                ErrorCode.DUPLICATE_PRODUCT_NAME,
+                                                "Product '" + candidate.name() + "' already exists in branch " + branchId))
+                                        : productRepository.save(candidate))));
     }
 
     public Mono<Void> removeProductFromBranch(Long franchiseId, Long branchId, Long productId) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(validatePositiveId(branchId, "branchId"))
                 .then(validatePositiveId(productId, "productId"))
-                .then(Mono.defer(() -> findExistingBranch(franchiseId, branchId)))
-                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
-                .flatMap(product -> productRepository.deleteById(product.id()));
+                .then(Mono.defer(() -> transactionalPort.executeInTransaction(
+                        findExistingBranch(franchiseId, branchId)
+                                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
+                                .flatMap(product -> productRepository.deleteById(product.id())))));
     }
 
     public Mono<Product> updateProductStock(Long franchiseId, Long branchId, Long productId, int newStock) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(validatePositiveId(branchId, "branchId"))
                 .then(validatePositiveId(productId, "productId"))
-                .then(Mono.defer(() -> findExistingBranch(franchiseId, branchId)))
-                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
-                .map(existing -> existing.withUpdatedStock(newStock))
-                .flatMap(productRepository::save);
+                .then(validateNonNegativeStock(newStock))
+                .then(Mono.defer(() -> transactionalPort.executeInTransaction(
+                        findExistingBranch(franchiseId, branchId)
+                                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
+                                .map(existing -> existing.withUpdatedStock(newStock))
+                                .flatMap(productRepository::save))));
     }
 
     public Mono<Product> updateProductName(Long franchiseId, Long branchId, Long productId, String newName) {
         return validatePositiveId(franchiseId, "franchiseId")
                 .then(validatePositiveId(branchId, "branchId"))
                 .then(validatePositiveId(productId, "productId"))
-                .then(Mono.defer(() -> findExistingBranch(franchiseId, branchId)))
-                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
-                .map(existing -> existing.withUpdatedName(newName))
-                .flatMap(updated -> productRepository.existsByBranchIdAndNameIgnoreCaseAndIdNot(
-                                branchId, updated.name(), productId)
-                        .flatMap(exists -> Boolean.TRUE.equals(exists)
-                                ? Mono.error(new DuplicateResourceException(
-                                        ErrorCode.DUPLICATE_PRODUCT_NAME,
-                                        "Product '" + updated.name() + "' already exists in branch " + branchId))
-                                : productRepository.save(updated)));
+                .then(Mono.fromCallable(() -> Product.createNew(branchId, newName, 0)))
+                .flatMap(validated -> transactionalPort.executeInTransaction(
+                        Mono.defer(() -> findExistingBranch(franchiseId, branchId))
+                                .then(Mono.defer(() -> findExistingProduct(branchId, productId)))
+                                .map(existing -> existing.withUpdatedName(validated.name()))
+                                .flatMap(updated -> productRepository.existsByBranchIdAndNameIgnoreCaseAndIdNot(
+                                                branchId, updated.name(), productId)
+                                        .flatMap(exists -> Boolean.TRUE.equals(exists)
+                                                ? Mono.error(() -> new DuplicateResourceException(
+                                                        ErrorCode.DUPLICATE_PRODUCT_NAME,
+                                                        "Product '" + updated.name() + "' already exists in branch " + branchId))
+                                                : productRepository.save(updated)))));
     }
 
     public Flux<BranchTopProduct> getTopStockProductsByFranchise(Long franchiseId) {
@@ -144,31 +178,57 @@ public class FranchiseUseCase {
                 .flatMapMany(franchise -> productRepository.findTopStockProductPerBranchByFranchiseId(franchise.id()));
     }
 
+    private Mono<List<Branch>> loadProductsForBranches(List<Branch> branches, List<Long> branchIds) {
+        Flux<Product> batchProducts = productRepository.findAllByBranchIds(branchIds);
+        if (batchProducts == null) {
+            return Flux.fromIterable(branches)
+                    .concatMap(branch -> productRepository.findAllByBranchId(branch.id())
+                            .collectList()
+                            .map(branch::withProducts))
+                    .collectList();
+        }
+        return batchProducts.collectList()
+                .map(products -> {
+                    Map<Long, List<Product>> byBranch = products.stream()
+                            .collect(Collectors.groupingBy(Product::branchId));
+                    return branches.stream()
+                            .map(branch -> branch.withProducts(byBranch.getOrDefault(branch.id(), List.of())))
+                            .toList();
+                });
+    }
+
     private Mono<Franchise> findExistingFranchise(Long franchiseId) {
         return franchiseRepository.findById(franchiseId)
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+                .switchIfEmpty(Mono.error(() -> new ResourceNotFoundException(
                         ErrorCode.FRANCHISE_NOT_FOUND,
                         "Franchise with id " + franchiseId + " was not found")));
     }
 
     private Mono<Branch> findExistingBranch(Long franchiseId, Long branchId) {
         return findExistingFranchise(franchiseId)
-                .then(branchRepository.findByIdAndFranchiseId(branchId, franchiseId))
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+                .then(Mono.defer(() -> branchRepository.findByIdAndFranchiseId(branchId, franchiseId)))
+                .switchIfEmpty(Mono.error(() -> new ResourceNotFoundException(
                         ErrorCode.BRANCH_NOT_FOUND,
                         "Branch with id " + branchId + " was not found in franchise " + franchiseId)));
     }
 
     private Mono<Product> findExistingProduct(Long branchId, Long productId) {
         return productRepository.findByIdAndBranchId(productId, branchId)
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+                .switchIfEmpty(Mono.error(() -> new ResourceNotFoundException(
                         ErrorCode.PRODUCT_NOT_FOUND,
                         "Product with id " + productId + " was not found in branch " + branchId)));
     }
 
     private static Mono<Void> validatePositiveId(Long id, String paramName) {
         if (id == null || id <= 0) {
-            return Mono.error(new DomainValidationException(paramName + " must be a positive number"));
+            return Mono.error(() -> new DomainValidationException(paramName + " must be a positive number"));
+        }
+        return Mono.empty();
+    }
+
+    private static Mono<Void> validateNonNegativeStock(int stock) {
+        if (stock < 0) {
+            return Mono.error(() -> new DomainValidationException("Product stock cannot be negative: " + stock));
         }
         return Mono.empty();
     }
