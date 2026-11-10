@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Infrastructure as Code (CloudFormation) for Franchise Reactive API Persistence (RDS MySQL 8.4 & ECR)'
+Description: 'Infrastructure as Code (CloudFormation) for Franchise Reactive API (VPC, ALB, ECS Fargate, RDS MySQL 8.4 & ECR)'
 
 Parameters:
   EnvironmentName:
@@ -13,8 +13,18 @@ Parameters:
   DatabaseMasterUsername:
     Type: String
     Default: franchise_admin
+  ContainerImageTag:
+    Type: String
+    Default: '1.0.0'
+    Description: Immutable container image tag deployed to ECS Fargate
+
+Conditions:
+  IsProd: !Equals [!Ref EnvironmentName, prod]
 
 Resources:
+  # ============================================================================
+  # 1. Network Architecture (VPC, Public/Private Subnets, IGW & NAT Gateway)
+  # ============================================================================
   FranchiseVpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -25,12 +35,90 @@ Resources:
         - Key: Name
           Value: !Sub 'franchise-api-${EnvironmentName}-vpc'
 
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-igw'
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref FranchiseVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FranchiseVpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-public-subnet-a'
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FranchiseVpc
+      CidrBlock: 10.20.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-public-subnet-b'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref FranchiseVpc
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-public-rt'
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref FranchiseVpc
       CidrBlock: 10.20.10.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-private-subnet-a'
 
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
@@ -38,6 +126,36 @@ Resources:
       VpcId: !Ref FranchiseVpc
       CidrBlock: 10.20.11.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-private-subnet-b'
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref FranchiseVpc
+      Tags:
+        - Key: Name
+          Value: !Sub 'franchise-api-${EnvironmentName}-private-rt'
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
 
   DatabaseSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
@@ -47,11 +165,44 @@ Resources:
         - !Ref PrivateSubnetA
         - !Ref PrivateSubnetB
 
+  # ============================================================================
+  # 2. Security Groups (Least-Privilege Layered Access)
+  # ============================================================================
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for public Application Load Balancer
+      VpcId: !Ref FranchiseVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 10.20.0.0/16
+
   AppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for Franchise API containers
+      GroupDescription: Security group for Franchise API ECS Fargate tasks
       VpcId: !Ref FranchiseVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 10.20.0.0/16
 
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -64,6 +215,9 @@ Resources:
           ToPort: 3306
           SourceSecurityGroupId: !Ref AppSecurityGroup
 
+  # ============================================================================
+  # 3. Persistence Layer: Amazon RDS MySQL 8.4 (Managed Master Password)
+  # ============================================================================
   FranchiseRdsInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Retain
@@ -71,20 +225,31 @@ Resources:
     Properties:
       DBInstanceIdentifier: !Sub 'franchise-api-${EnvironmentName}-mysql'
       Engine: mysql
-      EngineVersion: '8.4.3'
+      EngineVersion: '8.4.8'
       DBInstanceClass: db.t4g.micro
       AllocatedStorage: 20
+      MaxAllocatedStorage: 100
       StorageType: gp3
       StorageEncrypted: true
       DBName: !Ref DatabaseName
       MasterUsername: !Ref DatabaseMasterUsername
       ManageMasterUserPassword: true
+      EnableIAMDatabaseAuthentication: true
       DBSubnetGroupName: !Ref DatabaseSubnetGroup
       VPCSecurityGroups:
         - !Ref DatabaseSecurityGroup
+      MultiAZ: !If [IsProd, true, false]
+      DeletionProtection: !If [IsProd, true, false]
+      CopyTagsToSnapshot: true
       PubliclyAccessible: false
       BackupRetentionPeriod: 7
+      EnableCloudwatchLogsExports:
+        - error
+        - slowquery
 
+  # ============================================================================
+  # 4. Container Registry (ECR) & Lifecycle Policy
+  # ============================================================================
   FranchiseEcrRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -92,11 +257,203 @@ Resources:
       ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Retain only the last 15 immutable container images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 15
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  # ============================================================================
+  # 5. Compute Layer: ECS Fargate, ALB, CloudWatch Logs & IAM Roles
+  # ============================================================================
+  FranchiseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/franchise-api-${EnvironmentName}'
+      RetentionInDays: 30
+
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'franchise-api-${EnvironmentName}-ecs-exec-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadRdsManagedSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !GetAtt FranchiseRdsInstance.MasterUserSecret.SecretArn
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'franchise-api-${EnvironmentName}-ecs-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'franchise-api-${EnvironmentName}-alb'
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      LoadBalancerAttributes:
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'franchise-api-${EnvironmentName}-tg'
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref FranchiseVpc
+      HealthCheckEnabled: true
+      HealthCheckPath: /actuator/health/readiness
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 15
+      Matcher:
+        HttpCode: '200'
+
+  AlbHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  FranchiseEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'franchise-api-${EnvironmentName}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  FranchiseTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'franchise-api-${EnvironmentName}'
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: franchise-api
+          Image: !Sub '${FranchiseEcrRepository.RepositoryUri}:${ContainerImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              HostPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: SERVER_PORT
+              Value: '8080'
+            - Name: SPRING_R2DBC_URL
+              Value: !Sub 'r2dbc:mysql://${FranchiseRdsInstance.Endpoint.Address}:3306/${DatabaseName}?sslMode=PREFERRED&tlsVersion=TLSv1.3'
+            - Name: SPRING_R2DBC_USERNAME
+              Value: !Ref DatabaseMasterUsername
+            - Name: SPRING_FLYWAY_URL
+              Value: !Sub 'jdbc:mysql://${FranchiseRdsInstance.Endpoint.Address}:3306/${DatabaseName}?sslMode=PREFERRED&tlsVersions=TLSv1.3'
+            - Name: SPRING_FLYWAY_USER
+              Value: !Ref DatabaseMasterUsername
+          Secrets:
+            - Name: SPRING_R2DBC_PASSWORD
+              ValueFrom: !Sub '${FranchiseRdsInstance.MasterUserSecret.SecretArn}:password::'
+            - Name: SPRING_FLYWAY_PASSWORD
+              ValueFrom: !Sub '${FranchiseRdsInstance.MasterUserSecret.SecretArn}:password::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FranchiseLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  FranchiseEcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbHttpListener
+    Properties:
+      ServiceName: !Sub 'franchise-api-${EnvironmentName}-service'
+      Cluster: !Ref FranchiseEcsCluster
+      TaskDefinition: !Ref FranchiseTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref AppSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetB
+      LoadBalancers:
+        - ContainerName: franchise-api
+          ContainerPort: 8080
+          TargetGroupArn: !Ref AlbTargetGroup
 
 Outputs:
   DatabaseEndpoint:
     Description: RDS MySQL connection hostname
     Value: !GetAtt FranchiseRdsInstance.Endpoint.Address
+  RdsSecretArn:
+    Description: ARN of the Secrets Manager secret holding RDS credentials
+    Value: !GetAtt FranchiseRdsInstance.MasterUserSecret.SecretArn
   EcrRepositoryUri:
     Description: ECR Repository URI
     Value: !GetAtt FranchiseEcrRepository.RepositoryUri
+  EcsClusterName:
+    Description: ECS Fargate cluster name
+    Value: !Ref FranchiseEcsCluster
+  AlbDnsName:
+    Description: Public DNS hostname of the Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName

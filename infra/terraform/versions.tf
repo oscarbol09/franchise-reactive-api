@@ -7,6 +7,16 @@ terraform {
       version = "~> 5.60"
     }
   }
+
+  # Production state management uses encrypted S3 storage and DynamoDB state locking.
+  # Uncomment and pass -backend-config parameters during CI/CD initialization:
+  # backend "s3" {
+  #   bucket         = "franchise-api-terraform-state"
+  #   key            = "prod/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   encrypt        = true
+  #   dynamodb_table = "franchise-api-terraform-locks"
+  # }
 }
 
 provider "aws" {

@@ -36,8 +36,8 @@ flowchart LR
 ├── docker-compose.yml                  # Orquestación local: MySQL 8.4 + API Reactiva con healthchecks
 ├── api-requests.http                   # Colección ejecutable de peticiones HTTP para los 10 endpoints
 ├── infra/
-│   ├── terraform/                      # IaC en Terraform (VPC, Subnets privadas, RDS MySQL 8.4, ECR, ECS)
-│   └── cloudformation/                 # Plantilla equivalente en AWS CloudFormation
+│   ├── terraform/                      # IaC en Terraform (VPC, Subnets públicas/privadas, IGW/NAT, ALB, ECS Fargate, RDS MySQL 8.4, ECR)
+│   └── cloudformation/                 # Plantilla equivalente en AWS CloudFormation con paridad completa
 └── src/
     ├── main/java/com/franchise/
     │   ├── domain/
@@ -145,16 +145,18 @@ Para probar los 10 endpoints de forma interactiva y secuencial:
 
 ## Infraestructura como Código (IaC)
 
-El directorio `infra/` incluye dos alternativas listas para aprovisionar la capa de persistencia (**Amazon RDS MySQL 8.4** en subredes privadas con credenciales rotadas en AWS Secrets Manager) y el registro de contenedores (**Amazon ECR**):
+El directorio `infra/` incluye dos alternativas equivalentes para aprovisionar la topología completa en AWS: red aislada (**VPC** con subredes públicas y privadas en múltiples zonas de disponibilidad, **Internet Gateway** y **NAT Gateway**), capa de cómputo (**Application Load Balancer**, **Amazon ECS Fargate Service & Task Definition**, **CloudWatch Logs** y roles **IAM** de mínimo privilegio), capa de persistencia (**Amazon RDS MySQL 8.4** con `ManageMasterUserPassword`, autenticación IAM habilitada e inyección segura desde **AWS Secrets Manager** hacia las tareas ECS) y registro de contenedores (**Amazon ECR** con escaneo al subir y política de retención de ciclo de vida):
 
 * **Terraform (`infra/terraform/`):**
   ```bash
   cd infra/terraform
+  terraform fmt -check -recursive
   terraform init
   terraform plan -var="environment=prod"
   ```
 * **AWS CloudFormation (`infra/cloudformation/franchise-stack.yaml`):**
   ```bash
+  cfn-lint infra/cloudformation/franchise-stack.yaml
   aws cloudformation validate-template --template-body file://infra/cloudformation/franchise-stack.yaml
   ```
 
@@ -163,4 +165,5 @@ El directorio `infra/` incluye dos alternativas listas para aprovisionar la capa
 ## Limitaciones Conocidas y Trade-offs
 
 * **Desempate en Top Stock por Sucursal:** Cuando una sucursal tiene dos productos empatados con el mismo stock máximo, la ventana `ROW_NUMBER() OVER (PARTITION BY b.id ORDER BY p.stock DESC, p.id ASC)` selecciona de forma determinista el producto registrado primero (`id ASC`) para garantizar exactamente un producto líder por sucursal.
+* **Recarga de Credenciales ante Rotación de Secrets Manager:** Las tareas de ECS Fargate inyectan la contraseña administrada de RDS desde AWS Secrets Manager al iniciar el contenedor (`valueFrom`). Si Secrets Manager rota la contraseña del usuario maestro mientras el servicio está en ejecución, se requiere un redespliegue rodante (`aws ecs update-service --force-new-deployment`) o un adaptador de tokens IAM para renovar las conexiones del pool sin reiniciar las tareas.
 * **Transacciones Distribuidas:** El servicio opera sobre una única base de datos relacional reactiva; en caso de escalar a eventos de dominio hacia otros microservicios, se recomienda incorporar una tabla *Transactional Outbox*.
