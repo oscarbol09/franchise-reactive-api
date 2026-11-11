@@ -34,7 +34,7 @@ flowchart LR
 ```text
 ├── Dockerfile                          # Construcción multi-stage (JDK 21 -> JRE 21 no-root con capas extraídas)
 ├── docker-compose.yml                  # Orquestación local: MySQL 8.4 + API Reactiva con healthchecks
-├── api-requests.http                   # Colección ejecutable de peticiones HTTP para los 10 endpoints
+├── api-requests.http                   # Colección HTTP dinámica para los 10 endpoints y casos de error RFC 9457
 ├── infra/
 │   ├── terraform/                      # IaC en Terraform (VPC, Subnets públicas/privadas, IGW/NAT, ALB, ECS Fargate, RDS MySQL 8.4, ECR)
 │   └── cloudformation/                 # Plantilla equivalente en AWS CloudFormation con paridad completa
@@ -49,9 +49,12 @@ flowchart LR
     │       ├── drivenadapter/r2dbc/    # Entidades R2DBC, repositorios reactivos y adaptadores
     │       └── entrypoint/reactiveweb/ # RouterRest, Handler, validación y manejador RFC 9457
     └── test/java/com/franchise/
-        ├── architecture/               # Reglas ArchUnit (aislamiento estricto del dominio)
+        ├── architecture/               # Reglas ArchUnit (aislamiento de dominio, capas y ciclos)
+        ├── config/                     # Integración compartida de BlockHound para hilos NonBlocking
         ├── domain/usecase/             # Pruebas unitarias reactivas con StepVerifier y BlockHound
-        └── infrastructure/             # Pruebas de integración extremo a extremo con WebTestClient
+        └── infrastructure/
+            ├── drivenadapter/r2dbc/    # Pruebas unitarias de adaptadores reactivos y mapeo de errores SQL
+            └── entrypoint/reactiveweb/ # Integración WebTestClient (H2 R2DBC y Testcontainers MySQL 8.4)
 ```
 
 ---
@@ -91,7 +94,7 @@ Por defecto, si no se definen variables de entorno de MySQL externo, la aplicaci
 
 ## Ejecución de Pruebas y Cobertura
 
-Para ejecutar las pruebas unitarias (`StepVerifier` + `BlockHound`), las pruebas de integración (`WebTestClient`), la validación arquitectónica (`ArchUnit`) y el umbral de cobertura (`JaCoCo`):
+Para ejecutar las pruebas unitarias (`StepVerifier` + `BlockHound` sobre hilos `NonBlocking`), las pruebas de integración aisladas (`WebTestClient` sobre H2 R2DBC y `Testcontainers` sobre `mysql:8.4.8` real cuando hay un demonio Docker activo), la validación arquitectónica (`ArchUnit` verificando pureza del dominio, arquitectura en capas y ausencia de ciclos) y las puertas de calidad de cobertura (`JaCoCo` exigiendo un mínimo de **80% en instrucciones y 80% en ramas**):
 
 ```bash
 ./mvnw clean verify
