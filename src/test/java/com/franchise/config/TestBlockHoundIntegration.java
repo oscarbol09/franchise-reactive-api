@@ -13,6 +13,8 @@ public class TestBlockHoundIntegration implements BlockHoundIntegration {
                         "org.springframework.core.type.classreading.SimpleMetadataReaderFactory",
                         "getMetadataReader"
                 )
-                .allowBlockingCallsInside("org.springdoc.api.AbstractOpenApiResource", "getOpenApi");
+                .allowBlockingCallsInside("org.springdoc.api.AbstractOpenApiResource", "getOpenApi")
+                .allowBlockingCallsInside("java.io.RandomAccessFile", "readBytes")
+                .allowBlockingCallsInside("java.io.FileInputStream", "readBytes");
     }
 }

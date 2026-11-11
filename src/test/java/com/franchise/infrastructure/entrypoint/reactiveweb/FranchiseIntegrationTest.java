@@ -11,13 +11,12 @@ import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.ProductResponse;
 import com.franchise.infrastructure.entrypoint.reactiveweb.dto.FranchiseApiDtos.UpdateStockPayload;
 import com.franchise.infrastructure.entrypoint.reactiveweb.error.GlobalErrorWebExceptionHandler;
+import com.franchise.infrastructure.entrypoint.reactiveweb.security.SecurityHeadersWebFilter;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,32 +27,42 @@ import org.springframework.http.server.RequestPath;
 import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.blockhound.BlockHound;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FranchiseIntegrationTest {
 
     @Autowired
     private WebTestClient webTestClient;
+
+    @Autowired
+    private DatabaseClient databaseClient;
 
     @BeforeAll
     static void setupBlockHound() {
         BlockHound.install(new TestBlockHoundIntegration());
     }
 
+    @BeforeEach
+    void cleanDatabase() {
+        databaseClient.sql("DELETE FROM products").fetch().rowsUpdated()
+                .then(databaseClient.sql("DELETE FROM branches").fetch().rowsUpdated())
+                .then(databaseClient.sql("DELETE FROM franchises").fetch().rowsUpdated())
+                .block();
+    }
+
     @Test
-    @Order(1)
     @DisplayName("Full lifecycle: creates franchise, branches, products, updates names/stock, deletes product, and queries top stock per branch")
     void shouldExecuteCompleteFranchiseLifecycleReactively() {
-        // 1. Create Franchise
         FranchiseResponse franchise = webTestClient.post()
                 .uri("/api/v1/franchises")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -69,7 +78,6 @@ class FranchiseIntegrationTest {
         Long franchiseId = franchise.id();
         assertThat(franchise.name()).isEqualTo("Juan Valdez Holding");
 
-        // 2. Bonus: Update Franchise Name
         webTestClient.patch()
                 .uri("/api/v1/franchises/{franchiseId}", franchiseId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -79,7 +87,6 @@ class FranchiseIntegrationTest {
                 .expectBody(FranchiseResponse.class)
                 .value(updated -> assertThat(updated.name()).isEqualTo("Juan Valdez Global"));
 
-        // 3. Add two branches to the franchise
         BranchResponse branchMedellin = webTestClient.post()
                 .uri("/api/v1/franchises/{franchiseId}/branches", franchiseId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -103,7 +110,6 @@ class FranchiseIntegrationTest {
         assertThat(branchMedellin).isNotNull();
         assertThat(branchBogota).isNotNull();
 
-        // 4. Bonus: Update Branch Name
         webTestClient.patch()
                 .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}", franchiseId, branchMedellin.id())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -113,7 +119,6 @@ class FranchiseIntegrationTest {
                 .expectBody(BranchResponse.class)
                 .value(updated -> assertThat(updated.name()).isEqualTo("Sucursal El Poblado"));
 
-        // 5. Add products to both branches
         ProductResponse prod1 = webTestClient.post()
                 .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products", franchiseId, branchMedellin.id())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -159,14 +164,12 @@ class FranchiseIntegrationTest {
         assertThat(prodToDelete).isNotNull();
         assertThat(prodBogota).isNotNull();
 
-        // 6. Delete temporary product
         webTestClient.delete()
                 .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}",
                         franchiseId, branchMedellin.id(), prodToDelete.id())
                 .exchange()
                 .expectStatus().isNoContent();
 
-        // 7. Update stock of prod2 so it overtakes prod1 in Medellín branch
         webTestClient.patch()
                 .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}/stock",
                         franchiseId, branchMedellin.id(), prod2.id())
@@ -177,7 +180,6 @@ class FranchiseIntegrationTest {
                 .expectBody(ProductResponse.class)
                 .value(updated -> assertThat(updated.stock()).isEqualTo(450));
 
-        // 8. Bonus: Update product name of prod2
         webTestClient.patch()
                 .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}",
                         franchiseId, branchMedellin.id(), prod2.id())
@@ -188,7 +190,6 @@ class FranchiseIntegrationTest {
                 .expectBody(ProductResponse.class)
                 .value(updated -> assertThat(updated.name()).isEqualTo("Café Cumbre Reserva"));
 
-        // 9. Query top stock product per branch for this franchise
         List<BranchTopProductResponse> topProducts = webTestClient.get()
                 .uri("/api/v1/franchises/{franchiseId}/top-stock-products", franchiseId)
                 .exchange()
@@ -206,7 +207,6 @@ class FranchiseIntegrationTest {
         assertThat(topProducts.get(1).productName()).isEqualTo("Nevado Arequipe");
         assertThat(topProducts.get(1).stock()).isEqualTo(310);
 
-        // 10. Query complete franchise detail
         webTestClient.get()
                 .uri("/api/v1/franchises/{franchiseId}", franchiseId)
                 .exchange()
@@ -219,9 +219,224 @@ class FranchiseIntegrationTest {
     }
 
     @Test
-    @Order(2)
+    @DisplayName("Top-stock query breaks ties deterministically by lowest product ID and handles empty franchises/branches")
+    void shouldBreakTiesDeterministicallyAndHandleEmptyBranchesInTopStockQuery() {
+        FranchiseResponse franchise = webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Franquicia Desempate"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(FranchiseResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(franchise).isNotNull();
+        Long franchiseId = franchise.id();
+
+        // 1. Franchise with 0 branches returns empty top-stock list and empty branches detail
+        webTestClient.get()
+                .uri("/api/v1/franchises/{franchiseId}/top-stock-products", franchiseId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(BranchTopProductResponse.class)
+                .hasSize(0);
+
+        webTestClient.get()
+                .uri("/api/v1/franchises/{franchiseId}", franchiseId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(FranchiseResponse.class)
+                .value(detail -> assertThat(detail.branches()).isEmpty());
+
+        // 2. Branch with 0 products returns empty top-stock list
+        BranchResponse branch = webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches", franchiseId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Sucursal Norte"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(BranchResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(branch).isNotNull();
+
+        webTestClient.get()
+                .uri("/api/v1/franchises/{franchiseId}/top-stock-products", franchiseId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(BranchTopProductResponse.class)
+                .hasSize(0);
+
+        // 3. Two products with identical max stock (500): tie-breaker must select the first created (lowest ID)
+        ProductResponse firstTied = webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products", franchiseId, branch.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new CreateProductPayload("Producto Empate Primero", 500))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(ProductResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products", franchiseId, branch.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new CreateProductPayload("Producto Empate Segundo", 500))
+                .exchange()
+                .expectStatus().isCreated();
+
+        assertThat(firstTied).isNotNull();
+
+        List<BranchTopProductResponse> topProducts = webTestClient.get()
+                .uri("/api/v1/franchises/{franchiseId}/top-stock-products", franchiseId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(BranchTopProductResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(topProducts).hasSize(1);
+        assertThat(topProducts.get(0).productId()).isEqualTo(firstTied.id());
+        assertThat(topProducts.get(0).productName()).isEqualTo("Producto Empate Primero");
+        assertThat(topProducts.get(0).stock()).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("Enforces hierarchical isolation across franchises/branches, duplicate conflicts, and idempotent self-renames")
+    void shouldEnforceHierarchicalIsolationAndIdempotentRenames() {
+        FranchiseResponse franchise1 = webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Franquicia Uno"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(FranchiseResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        FranchiseResponse franchise2 = webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Franquicia Dos"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(FranchiseResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(franchise1).isNotNull();
+        assertThat(franchise2).isNotNull();
+
+        BranchResponse branch1 = webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches", franchise1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Sucursal A"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(BranchResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        BranchResponse branch2 = webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches", franchise2.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Sucursal B"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(BranchResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(branch1).isNotNull();
+        assertThat(branch2).isNotNull();
+
+        ProductResponse product1 = webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products", franchise1.id(), branch1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new CreateProductPayload("Producto Exclusivo", 50))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(ProductResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(product1).isNotNull();
+
+        // Cross-franchise branch access (IDOR protection) -> 404 ERR-404-BRANCH
+        webTestClient.patch()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}", franchise1.id(), branch2.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Intento Cruzado"))
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("ERR-404-BRANCH");
+
+        // Cross-branch product access (IDOR protection) -> 404 ERR-404-PRODUCT
+        webTestClient.delete()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}",
+                        franchise2.id(), branch2.id(), product1.id())
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("ERR-404-PRODUCT");
+
+        // Duplicate branch name within the same franchise -> 409 ERR-409-BRANCH
+        webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches", franchise1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("sucursal a"))
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.CONFLICT)
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("ERR-409-BRANCH");
+
+        // Duplicate product name within the same branch -> 409 ERR-409-PRODUCT
+        webTestClient.post()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products", franchise1.id(), branch1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new CreateProductPayload("producto exclusivo", 10))
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.CONFLICT)
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("ERR-409-PRODUCT");
+
+        // Idempotent self-renames (excluded by id <> :excludedId) -> 200 OK
+        webTestClient.patch()
+                .uri("/api/v1/franchises/{franchiseId}", franchise1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Franquicia Uno"))
+                .exchange()
+                .expectStatus().isOk();
+
+        webTestClient.patch()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}", franchise1.id(), branch1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Sucursal A"))
+                .exchange()
+                .expectStatus().isOk();
+
+        webTestClient.patch()
+                .uri("/api/v1/franchises/{franchiseId}/branches/{branchId}/products/{productId}",
+                        franchise1.id(), branch1.id(), product1.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Producto Exclusivo"))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
     @DisplayName("Returns RFC 9457 ProblemDetail on 404 Not Found, 409 Conflict, and 400 Bad Request")
     void shouldReturnStandardProblemDetailsOnErrors() {
+        webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("Juan Valdez Global"))
+                .exchange()
+                .expectStatus().isCreated();
+
         // 404 Not Found on non-existent franchise
         webTestClient.get()
                 .uri("/api/v1/franchises/99999/top-stock-products")
@@ -274,6 +489,17 @@ class FranchiseIntegrationTest {
                 .jsonPath("$.status").isEqualTo(400)
                 .jsonPath("$.errorCode").isEqualTo("ERR-400");
 
+        // 400 Bad Request on name exceeding 120 characters
+        webTestClient.post()
+                .uri("/api/v1/franchises")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NamePayload("A".repeat(121)))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.errorCode").isEqualTo("ERR-400");
+
         // 400 Bad Request on non-numeric path variable
         webTestClient.get()
                 .uri("/api/v1/franchises/abc")
@@ -285,6 +511,14 @@ class FranchiseIntegrationTest {
         // 400 Bad Request on zero or negative path variable
         webTestClient.get()
                 .uri("/api/v1/franchises/0")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.errorCode").isEqualTo("ERR-400");
+
+        webTestClient.get()
+                .uri("/api/v1/franchises/-10")
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
@@ -334,10 +568,21 @@ class FranchiseIntegrationTest {
     }
 
     @Test
-    @Order(3)
-    @DisplayName("GlobalErrorWebExceptionHandler safely encodes invalid URI characters and maps DataIntegrity, ResponseStatus, and 500 errors")
+    @DisplayName("GlobalErrorWebExceptionHandler safely encodes invalid URI characters and maps DataIntegrity, ResponseStatus, committed, and 500 errors")
     void shouldHandleInvalidUriCharactersAndFallbackExceptionTypes() {
+        assertThat(new NamePayload(null).name()).isNull();
+        assertThat(new CreateProductPayload(null, 5).name()).isNull();
+
         GlobalErrorWebExceptionHandler errorHandler = new GlobalErrorWebExceptionHandler(new ObjectMapper());
+
+        // Committed response propagates error directly
+        MockServerWebExchange committedExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/franchises/1").build()
+        );
+        committedExchange.getResponse().setComplete().block();
+        StepVerifier.create(errorHandler.handle(committedExchange, new IllegalStateException("Already committed")))
+                .expectError(IllegalStateException.class)
+                .verify();
 
         // Path with unencoded curly braces '{' and '}' must not throw synchronous IllegalArgumentException
         MockServerWebExchange baseExchange = MockServerWebExchange.from(
@@ -370,7 +615,7 @@ class FranchiseIntegrationTest {
         assertThat(integrityExchange.getResponse().getBodyAsString().block())
                 .contains("ERR-409-INTEGRITY");
 
-        // ResponseStatusException -> preserves status code and populates errorCode
+        // ResponseStatusException with non-null reason and with null reason
         MockServerWebExchange statusExchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/v1/unknown").build()
         );
@@ -380,6 +625,29 @@ class FranchiseIntegrationTest {
         assertThat(statusExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
         assertThat(statusExchange.getResponse().getBodyAsString().block())
                 .contains("ERR-405-HTTP");
+
+        MockServerWebExchange nullReasonStatusExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/unknown").build()
+        );
+        StepVerifier.create(errorHandler.handle(nullReasonStatusExchange,
+                        new ResponseStatusException(HttpStatus.NOT_ACCEPTABLE)))
+                .verifyComplete();
+        assertThat(nullReasonStatusExchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE);
+
+        // Security headers omit restrictive CSP for Swagger UI & WebJars assets
+        MockServerWebExchange swaggerExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/swagger-ui/index.html").build()
+        );
+        SecurityHeadersWebFilter.applySecurityHeaders(swaggerExchange);
+        assertThat(swaggerExchange.getResponse().getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
+        assertThat(swaggerExchange.getResponse().getHeaders().getFirst("Content-Security-Policy")).isNull();
+
+        MockServerWebExchange webjarsExchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/webjars/swagger-ui/index.css").build()
+        );
+        SecurityHeadersWebFilter.applySecurityHeaders(webjarsExchange);
+        assertThat(webjarsExchange.getResponse().getHeaders().getFirst("X-Frame-Options")).isEqualTo("DENY");
+        assertThat(webjarsExchange.getResponse().getHeaders().getFirst("Content-Security-Policy")).isNull();
 
         // Unexpected RuntimeException -> 500 Internal Server Error
         MockServerWebExchange fallbackExchange = MockServerWebExchange.from(

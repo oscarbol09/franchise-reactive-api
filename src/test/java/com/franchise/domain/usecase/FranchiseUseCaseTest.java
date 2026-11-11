@@ -1,5 +1,6 @@
 package com.franchise.domain.usecase;
 
+import com.franchise.config.TestBlockHoundIntegration;
 import com.franchise.domain.exception.DomainValidationException;
 import com.franchise.domain.exception.DuplicateResourceException;
 import com.franchise.domain.exception.ErrorCode;
@@ -54,13 +55,7 @@ class FranchiseUseCaseTest {
 
     @BeforeAll
     static void installBlockHound() {
-        BlockHound.install(builder -> builder
-                .allowBlockingCallsInside("org.springframework.util.JdkIdGenerator", "generateId")
-                .allowBlockingCallsInside("java.util.UUID", "randomUUID")
-                .allowBlockingCallsInside(
-                        "org.springframework.core.type.classreading.SimpleMetadataReaderFactory",
-                        "getMetadataReader"
-                ));
+        BlockHound.install(new TestBlockHoundIntegration());
     }
 
     @BeforeEach
@@ -82,6 +77,13 @@ class FranchiseUseCaseTest {
         void shouldValidateDomainRecordsDirectly() {
             String overLimit = "A".repeat(121);
 
+            FranchiseUseCase defaultTxUseCase = new FranchiseUseCase(
+                    franchiseRepository,
+                    branchRepository,
+                    productRepository
+            );
+            assertThat(defaultTxUseCase).isNotNull();
+
             assertThatThrownBy(() -> Franchise.createNew(overLimit))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("120 characters");
@@ -96,6 +98,9 @@ class FranchiseUseCaseTest {
             assertThatThrownBy(() -> new Branch(1L, 1L, "   ", null))
                     .isInstanceOf(DomainValidationException.class);
 
+            assertThatThrownBy(() -> new Branch(1L, 1L, null, null))
+                    .isInstanceOf(DomainValidationException.class);
+
             assertThatThrownBy(() -> new Branch(1L, 1L, overLimit, null))
                     .isInstanceOf(DomainValidationException.class);
 
@@ -107,6 +112,9 @@ class FranchiseUseCaseTest {
                     .isInstanceOf(DomainValidationException.class);
 
             assertThatThrownBy(() -> new Product(1L, 1L, "  ", 10))
+                    .isInstanceOf(DomainValidationException.class);
+
+            assertThatThrownBy(() -> new Product(1L, 1L, null, 10))
                     .isInstanceOf(DomainValidationException.class);
 
             assertThatThrownBy(() -> new Product(1L, 1L, overLimit, 10))
@@ -160,7 +168,7 @@ class FranchiseUseCaseTest {
         @ValueSource(strings = {"   ", "\t"})
         @DisplayName("Rejects blank or null franchise names before touching persistence")
         void shouldRejectBlankFranchiseNames(String invalidName) {
-            StepVerifier.create(useCase.createFranchise(invalidName))
+            StepVerifier.create(useCase.createFranchise(invalidName).subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
@@ -191,7 +199,7 @@ class FranchiseUseCaseTest {
             when(franchiseRepository.existsByNameIgnoreCaseAndIdNot("Nombre Duplicado", 10L))
                     .thenReturn(Mono.just(true));
 
-            StepVerifier.create(useCase.updateFranchiseName(10L, "Nombre Duplicado"))
+            StepVerifier.create(useCase.updateFranchiseName(10L, "Nombre Duplicado").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(DuplicateResourceException.class);
                         assertThat(((DuplicateResourceException) error).errorCode())
@@ -205,15 +213,15 @@ class FranchiseUseCaseTest {
         @Test
         @DisplayName("Fails fast before querying database when updating franchise with blank name or non-positive ID")
         void shouldFailFastOnInvalidFranchiseUpdateInputs() {
-            StepVerifier.create(useCase.updateFranchiseName(10L, "   "))
+            StepVerifier.create(useCase.updateFranchiseName(10L, "   ").subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
-            StepVerifier.create(useCase.updateFranchiseName(0L, "Valido"))
+            StepVerifier.create(useCase.updateFranchiseName(0L, "Valido").subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
-            StepVerifier.create(useCase.updateFranchiseName(null, "Valido"))
+            StepVerifier.create(useCase.updateFranchiseName(null, "Valido").subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
@@ -225,7 +233,7 @@ class FranchiseUseCaseTest {
         void shouldFailUpdateWhenFranchiseNotFound() {
             when(franchiseRepository.findById(99L)).thenReturn(Mono.empty());
 
-            StepVerifier.create(useCase.updateFranchiseName(99L, "Nombre Nuevo"))
+            StepVerifier.create(useCase.updateFranchiseName(99L, "Nombre Nuevo").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(ResourceNotFoundException.class);
                         assertThat(((ResourceNotFoundException) error).errorCode())
@@ -269,7 +277,7 @@ class FranchiseUseCaseTest {
             when(franchiseRepository.findById(1L)).thenReturn(Mono.just(franchise));
             when(branchRepository.findAllByFranchiseId(1L)).thenReturn(Flux.empty());
 
-            StepVerifier.create(useCase.getFranchiseDetail(1L))
+            StepVerifier.create(useCase.getFranchiseDetail(1L).subscribeOn(Schedulers.parallel()))
                     .assertNext(detail -> assertThat(detail.branches()).isEmpty())
                     .verifyComplete();
 
@@ -306,7 +314,7 @@ class FranchiseUseCaseTest {
         void shouldNotInvokeBranchRepositoryWhenFranchiseNotFoundOnAddBranch() {
             when(franchiseRepository.findById(99L)).thenReturn(Mono.empty());
 
-            StepVerifier.create(useCase.addBranchToFranchise(99L, "Sucursal Poblado"))
+            StepVerifier.create(useCase.addBranchToFranchise(99L, "Sucursal Poblado").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(ResourceNotFoundException.class);
                         assertThat(((ResourceNotFoundException) error).errorCode())
@@ -325,7 +333,7 @@ class FranchiseUseCaseTest {
             when(branchRepository.existsByFranchiseIdAndNameIgnoreCase(1L, "Sucursal Poblado"))
                     .thenReturn(Mono.just(true));
 
-            StepVerifier.create(useCase.addBranchToFranchise(1L, "Sucursal Poblado"))
+            StepVerifier.create(useCase.addBranchToFranchise(1L, "Sucursal Poblado").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(DuplicateResourceException.class);
                         assertThat(((DuplicateResourceException) error).errorCode())
@@ -365,7 +373,7 @@ class FranchiseUseCaseTest {
             when(branchRepository.existsByFranchiseIdAndNameIgnoreCaseAndIdNot(1L, "Sucursal Duplicada", 5L))
                     .thenReturn(Mono.just(true));
 
-            StepVerifier.create(useCase.updateBranchName(1L, 5L, "Sucursal Duplicada"))
+            StepVerifier.create(useCase.updateBranchName(1L, 5L, "Sucursal Duplicada").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(DuplicateResourceException.class);
                         assertThat(((DuplicateResourceException) error).errorCode())
@@ -383,7 +391,7 @@ class FranchiseUseCaseTest {
             when(franchiseRepository.findById(1L)).thenReturn(Mono.just(franchise));
             when(branchRepository.findByIdAndFranchiseId(99L, 1L)).thenReturn(Mono.empty());
 
-            StepVerifier.create(useCase.updateBranchName(1L, 99L, "Sucursal Renovada"))
+            StepVerifier.create(useCase.updateBranchName(1L, 99L, "Sucursal Renovada").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(ResourceNotFoundException.class);
                         assertThat(((ResourceNotFoundException) error).errorCode())
@@ -427,7 +435,7 @@ class FranchiseUseCaseTest {
             when(branchRepository.findByIdAndFranchiseId(5L, 1L)).thenReturn(Mono.just(branch));
             when(productRepository.existsByBranchIdAndNameIgnoreCase(5L, "Capuccino")).thenReturn(Mono.just(true));
 
-            StepVerifier.create(useCase.addProductToBranch(1L, 5L, "Capuccino", 80))
+            StepVerifier.create(useCase.addProductToBranch(1L, 5L, "Capuccino", 80).subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(DuplicateResourceException.class);
                         assertThat(((DuplicateResourceException) error).errorCode())
@@ -441,7 +449,7 @@ class FranchiseUseCaseTest {
         @Test
         @DisplayName("Rejects product creation when stock is negative before querying database")
         void shouldRejectNegativeStock() {
-            StepVerifier.create(useCase.addProductToBranch(1L, 5L, "Capuccino", -5))
+            StepVerifier.create(useCase.addProductToBranch(1L, 5L, "Capuccino", -5).subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
@@ -469,7 +477,7 @@ class FranchiseUseCaseTest {
         @Test
         @DisplayName("Fails fast without querying database when updating stock with negative value")
         void shouldFailFastWhenUpdatingWithNegativeStock() {
-            StepVerifier.create(useCase.updateProductStock(1L, 5L, 100L, -1))
+            StepVerifier.create(useCase.updateProductStock(1L, 5L, 100L, -1).subscribeOn(Schedulers.parallel()))
                     .expectError(DomainValidationException.class)
                     .verify();
 
@@ -509,7 +517,7 @@ class FranchiseUseCaseTest {
             when(productRepository.existsByBranchIdAndNameIgnoreCaseAndIdNot(5L, "Expreso Doble", 100L))
                     .thenReturn(Mono.just(true));
 
-            StepVerifier.create(useCase.updateProductName(1L, 5L, 100L, "Expreso Doble"))
+            StepVerifier.create(useCase.updateProductName(1L, 5L, 100L, "Expreso Doble").subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(DuplicateResourceException.class);
                         assertThat(((DuplicateResourceException) error).errorCode())
@@ -530,7 +538,7 @@ class FranchiseUseCaseTest {
             when(branchRepository.findByIdAndFranchiseId(5L, 1L)).thenReturn(Mono.just(branch));
             when(productRepository.findByIdAndBranchId(999L, 5L)).thenReturn(Mono.empty());
 
-            StepVerifier.create(useCase.removeProductFromBranch(1L, 5L, 999L))
+            StepVerifier.create(useCase.removeProductFromBranch(1L, 5L, 999L).subscribeOn(Schedulers.parallel()))
                     .expectErrorSatisfies(error -> {
                         assertThat(error).isInstanceOf(ResourceNotFoundException.class);
                         assertThat(((ResourceNotFoundException) error).errorCode())
