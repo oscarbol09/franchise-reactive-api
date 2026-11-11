@@ -44,6 +44,9 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Pre-pull MySQL 8.4 Image for Testcontainers
+        run: docker pull mysql:8.4.8 || (docker pull public.ecr.aws/docker/library/mysql:8.4.8 && docker tag public.ecr.aws/docker/library/mysql:8.4.8 mysql:8.4.8)
+
       - name: Execute Test Suite, ArchUnit & JaCoCo Coverage Gate
         run: ./mvnw clean verify -B
 

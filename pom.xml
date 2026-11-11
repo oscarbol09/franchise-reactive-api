@@ -22,6 +22,7 @@
         <springdoc.version>2.6.0</springdoc.version>
         <archunit.version>1.3.0</archunit.version>
         <blockhound.version>1.0.9.RELEASE</blockhound.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <jacoco.version>0.8.12</jacoco.version>
     </properties>
 
@@ -110,6 +111,18 @@
             <version>${blockhound.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -163,6 +176,11 @@
                                     <limits>
                                         <limit>
                                             <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
                                             <value>COVEREDRATIO</value>
                                             <minimum>0.80</minimum>
                                         </limit>
