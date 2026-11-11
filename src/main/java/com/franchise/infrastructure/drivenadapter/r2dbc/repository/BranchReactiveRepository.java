@@ -21,14 +21,14 @@ public interface BranchReactiveRepository extends ReactiveCrudRepository<BranchD
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM branches WHERE franchise_id = :franchiseId AND name = :name
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByFranchiseIdAndNameIgnoreCase(Long franchiseId, String name);
+    Mono<Long> existsByFranchiseIdAndNameIgnoreCase(Long franchiseId, String name);
 
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM branches WHERE franchise_id = :franchiseId AND name = :name AND id <> :excludedId
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByFranchiseIdAndNameIgnoreCaseAndIdNot(Long franchiseId, String name, Long excludedId);
+    Mono<Long> existsByFranchiseIdAndNameIgnoreCaseAndIdNot(Long franchiseId, String name, Long excludedId);
 }

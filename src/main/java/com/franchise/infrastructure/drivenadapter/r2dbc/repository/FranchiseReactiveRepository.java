@@ -10,14 +10,14 @@ public interface FranchiseReactiveRepository extends ReactiveCrudRepository<Fran
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM franchises WHERE name = :name
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByNameIgnoreCase(String name);
+    Mono<Long> existsByNameIgnoreCase(String name);
 
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM franchises WHERE name = :name AND id <> :excludedId
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByNameIgnoreCaseAndIdNot(String name, Long excludedId);
+    Mono<Long> existsByNameIgnoreCaseAndIdNot(String name, Long excludedId);
 }

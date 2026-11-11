@@ -39,11 +39,13 @@ public class FranchiseR2dbcAdapter implements FranchiseRepositoryPort {
 
     @Override
     public Mono<Boolean> existsByNameIgnoreCase(String name) {
-        return repository.existsByNameIgnoreCase(name);
+        return repository.existsByNameIgnoreCase(name)
+                .map(flag -> flag > 0L);
     }
 
     @Override
     public Mono<Boolean> existsByNameIgnoreCaseAndIdNot(String name, Long excludedId) {
-        return repository.existsByNameIgnoreCaseAndIdNot(name, excludedId);
+        return repository.existsByNameIgnoreCaseAndIdNot(name, excludedId)
+                .map(flag -> flag > 0L);
     }
 }

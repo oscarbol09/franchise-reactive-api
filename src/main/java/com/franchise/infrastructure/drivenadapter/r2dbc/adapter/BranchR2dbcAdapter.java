@@ -46,11 +46,13 @@ public class BranchR2dbcAdapter implements BranchRepositoryPort {
 
     @Override
     public Mono<Boolean> existsByFranchiseIdAndNameIgnoreCase(Long franchiseId, String name) {
-        return repository.existsByFranchiseIdAndNameIgnoreCase(franchiseId, name);
+        return repository.existsByFranchiseIdAndNameIgnoreCase(franchiseId, name)
+                .map(flag -> flag > 0L);
     }
 
     @Override
     public Mono<Boolean> existsByFranchiseIdAndNameIgnoreCaseAndIdNot(Long franchiseId, String name, Long excludedId) {
-        return repository.existsByFranchiseIdAndNameIgnoreCaseAndIdNot(franchiseId, name, excludedId);
+        return repository.existsByFranchiseIdAndNameIgnoreCaseAndIdNot(franchiseId, name, excludedId)
+                .map(flag -> flag > 0L);
     }
 }

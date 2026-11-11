@@ -30,14 +30,14 @@ public interface ProductReactiveRepository extends ReactiveCrudRepository<Produc
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM products WHERE branch_id = :branchId AND name = :name
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByBranchIdAndNameIgnoreCase(Long branchId, String name);
+    Mono<Long> existsByBranchIdAndNameIgnoreCase(Long branchId, String name);
 
     @Query("""
             SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM products WHERE branch_id = :branchId AND name = :name AND id <> :excludedId
-            ) THEN TRUE ELSE FALSE END
+            ) THEN 1 ELSE 0 END
             """)
-    Mono<Boolean> existsByBranchIdAndNameIgnoreCaseAndIdNot(Long branchId, String name, Long excludedId);
+    Mono<Long> existsByBranchIdAndNameIgnoreCaseAndIdNot(Long branchId, String name, Long excludedId);
 }

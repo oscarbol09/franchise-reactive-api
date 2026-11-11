@@ -86,12 +86,14 @@ public class ProductR2dbcAdapter implements ProductRepositoryPort {
 
     @Override
     public Mono<Boolean> existsByBranchIdAndNameIgnoreCase(Long branchId, String name) {
-        return repository.existsByBranchIdAndNameIgnoreCase(branchId, name);
+        return repository.existsByBranchIdAndNameIgnoreCase(branchId, name)
+                .map(flag -> flag > 0L);
     }
 
     @Override
     public Mono<Boolean> existsByBranchIdAndNameIgnoreCaseAndIdNot(Long branchId, String name, Long excludedId) {
-        return repository.existsByBranchIdAndNameIgnoreCaseAndIdNot(branchId, name, excludedId);
+        return repository.existsByBranchIdAndNameIgnoreCaseAndIdNot(branchId, name, excludedId)
+                .map(flag -> flag > 0L);
     }
 
     @Override
