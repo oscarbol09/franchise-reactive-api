@@ -14,10 +14,7 @@ public interface ProductRepositoryPort {
 
     Flux<Product> findAllByBranchId(Long branchId);
 
-    default Flux<Product> findAllByBranchIds(List<Long> branchIds) {
-        return Flux.fromIterable(branchIds)
-                .concatMap(this::findAllByBranchId);
-    }
+    Flux<Product> findAllByBranchIds(List<Long> branchIds);
 
     Mono<Void> deleteById(Long id);
 
